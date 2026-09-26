@@ -1,0 +1,34 @@
+# Binari
+/server/api
+/server/*.exe
+/server/fmn-api
+
+# Environment (jangan pernah commit)
+.env
+.env.*
+!.env.example
+
+# Go
+/server/vendor/
+
+# Node / SvelteKit
+node_modules/
+/web/.svelte-kit/
+/web/build/
+/web/.vercel/
+.bun/
+
+# Editor & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch lokal
+/tmp/
+*.log
+
+# Aset hasil scraping Instagram: bahan mentah riset, bukan bagian produk,
+# dan bukan milik repo ini (foto milik FMN). File HTML/OCR/JSON profil besar
+# dan tidak perlu ikut versioning. Logo + poster asli dari klien TETAP ikut.
+/material/ig/
