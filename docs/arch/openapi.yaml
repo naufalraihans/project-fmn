@@ -693,6 +693,92 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
 
   # ============================================================ EVENTS (untuk kaitan aset & invoice)
+  /api/catalog/items/{id}/aktif:
+    post:
+      tags: [Catalog]
+      summary: Aktifkan item katalog
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200": { description: OK }
+        "403": { description: Hanya admin/superadmin }
+        "404": { description: Item tidak ditemukan }
+
+  /api/catalog/items/{id}/nonaktif:
+    post:
+      tags: [Catalog]
+      summary: Nonaktifkan item katalog (item tidak dihapus)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200": { description: OK }
+        "403": { description: Hanya admin/superadmin }
+
+  /api/assets/{id}/usages:
+    get:
+      tags: [Assets]
+      summary: Riwayat pemakaian satu aset
+      description: Kru hanya dapat melihat aset yang ditugaskan kepadanya (K4).
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200": { description: OK }
+        "404": { description: Aset tidak ditemukan atau di luar wewenang }
+    post:
+      tags: [Assets]
+      summary: Catat aset keluar untuk sebuah event
+      description: |
+        Stok diperiksa dan dikurangi dalam satu transaksi dengan baris aset
+        dikunci (SELECT ... FOR UPDATE), sehingga stok tidak dapat menjadi minus
+        walau beberapa permintaan datang bersamaan.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, qty, penanggung_jawab]
+              properties:
+                event_id: { type: string, format: uuid }
+                qty: { type: integer, minimum: 1 }
+                penanggung_jawab: { type: string }
+                petugas:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "201": { description: Pemakaian tercatat }
+        "409": { description: Stok tidak mencukupi atau aset sedang perawatan }
+
+  /api/assets/usages/{id}/petugas:
+    post:
+      tags: [Assets]
+      summary: Tugaskan petugas pada satu pemakaian aset
+      description: Dasar izin K4 - kru hanya melihat aset yang ditugaskan kepadanya.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                petugas:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "201": { description: Penugasan dibuat }
+        "400": { description: Daftar petugas kosong atau terlalu panjang }
+    delete:
+      tags: [Assets]
+      summary: Batalkan penugasan petugas
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200": { description: Penugasan dibatalkan }
+
   /api/events:
     get:
       tags: [Assets]
@@ -1182,6 +1268,12 @@ paths:
                       version: { type: string }
 
 components:
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
   securitySchemes:
     bearerAuth:
       type: http

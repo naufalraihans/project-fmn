@@ -50,8 +50,13 @@ var rules = []Rule{
 	// ---------- katalog ----------
 	{"GET", "/api/catalog/items", admins()},
 	{"POST", "/api/catalog/items", admins()},
+	// Tanpa baris ini, GET detail ditolak 403 oleh fail-closed - termasuk untuk
+	// superadmin. Bagian 3 audit menemukan tepat kekurangan ini.
+	{"GET", "/api/catalog/items/{id}", admins()},
 	{"PATCH", "/api/catalog/items/{id}", admins()},
 	{"DELETE", "/api/catalog/items/{id}", admins()},
+	{"POST", "/api/catalog/items/{id}/aktif", admins()},
+	{"POST", "/api/catalog/items/{id}/nonaktif", admins()},
 
 	// ---------- aset ----------
 	{"GET", "/api/assets", allRoles()},
@@ -59,10 +64,17 @@ var rules = []Rule{
 	{"POST", "/api/assets", admins()},
 	{"PATCH", "/api/assets/{id}", admins()},
 	{"POST", "/api/assets/{id}/dispatch", admins()},
+	{"POST", "/api/assets/{id}/usages", admins()},
+	{"GET", "/api/assets/{id}/usages", allRoles()},
 	{"POST", "/api/assets/usages/{id}/return", admins()},
 	{"POST", "/api/assets/{id}/maintenance", admins()},
+	{"GET", "/api/assets/{id}/maintenance", allRoles()},
+	{"POST", "/api/assets/usages/{id}/petugas", admins()},
+	{"DELETE", "/api/assets/usages/{id}/petugas", admins()},
 	{"POST", "/api/assets/{id}/assignments", admins()},
 	{"DELETE", "/api/assets/{id}/assignments", admins()},
+	// Event hanya untuk admin & superadmin: data event memuat klien dan nilai
+	// proyek, tidak perlu terlihat oleh kru (K5 di docs/arch/rbac.md).
 	{"GET", "/api/events", admins()},
 	{"POST", "/api/events", admins()},
 

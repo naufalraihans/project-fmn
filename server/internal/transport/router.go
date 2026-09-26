@@ -42,6 +42,8 @@ func NewRouter(d Deps) http.Handler {
 	attendance := postgres.NewAttendanceRepo(d.Pool)
 	content := postgres.NewContentRepo(d.Pool)
 	inquiry := postgres.NewInquiryRepo(d.Pool)
+	catalog := postgres.NewCatalogRepo(d.Pool)
+	asset := postgres.NewAssetRepo(d.Pool)
 
 	h := handler.New(handler.Deps{
 		Pool:     d.Pool,
@@ -51,6 +53,8 @@ func NewRouter(d Deps) http.Handler {
 		Attend:   attendance,
 		ContentR: content,
 		InquiryR: inquiry,
+		CatalogR: catalog,
+		AssetR:   asset,
 	})
 
 	// ---------- rute yang SUDAH terimplementasi ----------
@@ -92,6 +96,31 @@ func NewRouter(d Deps) http.Handler {
 
 	// Fase 2 - audit
 	mux.HandleFunc("GET /api/audit", h.AuditList)
+
+	// Fase 3 - katalog
+	mux.HandleFunc("GET /api/catalog/items", h.CatalogList)
+	mux.HandleFunc("POST /api/catalog/items", h.CatalogCreate)
+	mux.HandleFunc("GET /api/catalog/items/{id}", h.CatalogGet)
+	mux.HandleFunc("PATCH /api/catalog/items/{id}", h.CatalogUpdate)
+	mux.HandleFunc("DELETE /api/catalog/items/{id}", h.CatalogDelete)
+	mux.HandleFunc("POST /api/catalog/items/{id}/{aksi}", h.CatalogToggle)
+
+	// Fase 3 - aset
+	mux.HandleFunc("GET /api/assets", h.AssetList)
+	mux.HandleFunc("POST /api/assets", h.AssetCreate)
+	mux.HandleFunc("GET /api/assets/{id}", h.AssetGet)
+	mux.HandleFunc("PATCH /api/assets/{id}", h.AssetUpdate)
+	mux.HandleFunc("POST /api/assets/{id}/usages", h.AssetUse)
+	mux.HandleFunc("GET /api/assets/{id}/usages", h.AssetUsageHistory)
+	mux.HandleFunc("POST /api/assets/usages/{id}/return", h.AssetReturn)
+	mux.HandleFunc("POST /api/assets/{id}/maintenance", h.AssetMaintenance)
+	mux.HandleFunc("GET /api/assets/{id}/maintenance", h.AssetListMaintenance)
+	mux.HandleFunc("POST /api/assets/usages/{id}/petugas", h.AssetAssign)
+	mux.HandleFunc("DELETE /api/assets/usages/{id}/petugas", h.AssetUnassign)
+
+	// Fase 3 - event
+	mux.HandleFunc("GET /api/events", h.EventList)
+	mux.HandleFunc("POST /api/events", h.EventCreate)
 
 	// ---------- rute kontrak yang BELUM dibuat: stub 501 ----------
 	// Didaftarkan supaya otorisasinya tetap teruji (rute tak terdaftar tidak

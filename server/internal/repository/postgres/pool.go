@@ -40,6 +40,8 @@ type Tx interface {
 	Exec(ctx context.Context, sql string, args ...any) (int64, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	// QueryRowScan menjalankan INSERT ... RETURNING dan memindai hasilnya ke dst.
+	QueryRowScan(ctx context.Context, sql string, args []any, dst ...any) error
 }
 
 // txWrapper membungkus pgx.Tx agar memenuhi interface Tx di atas.
@@ -59,6 +61,12 @@ func (t txWrapper) Query(ctx context.Context, sql string, args ...any) (pgx.Rows
 
 func (t txWrapper) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return t.tx.QueryRow(ctx, sql, args...)
+}
+
+// QueryRowScan memisahkan argumen query dari tujuan pemindaian supaya pemanggil
+// dapat menulis INSERT ... RETURNING dengan rapi.
+func (t txWrapper) QueryRowScan(ctx context.Context, sql string, args []any, dst ...any) error {
+	return t.tx.QueryRow(ctx, sql, args...).Scan(dst...)
 }
 
 // WithTx menjalankan fn di dalam satu transaksi; rollback otomatis bila fn gagal.

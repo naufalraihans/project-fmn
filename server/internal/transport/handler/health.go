@@ -19,18 +19,22 @@ type Handler struct {
 	inquiry    *usecase.InquiryUsecase
 	attendance *usecase.AttendanceUsecase
 	account    *usecase.AccountUsecase
+	catalog    *usecase.CatalogUsecase
+	asset      *usecase.AssetUsecase
 	profiles   *postgres.ProfileRepo
 }
 
 // Deps dirakit sekali di router; handler tidak membuat koneksi sendiri.
 type Deps struct {
-	Pool      *pgxpool.Pool
-	Notify    *notify.Client
-	Supabase  *supabaseauth.Client
-	Profiles  *postgres.ProfileRepo
-	Attend    *postgres.AttendanceRepo
-	ContentR  *postgres.ContentRepo
-	InquiryR  *postgres.InquiryRepo
+	Pool     *pgxpool.Pool
+	Notify   *notify.Client
+	Supabase *supabaseauth.Client
+	Profiles *postgres.ProfileRepo
+	Attend   *postgres.AttendanceRepo
+	ContentR *postgres.ContentRepo
+	InquiryR *postgres.InquiryRepo
+	CatalogR *postgres.CatalogRepo
+	AssetR   *postgres.AssetRepo
 }
 
 func New(d Deps) *Handler {
@@ -41,13 +45,13 @@ func New(d Deps) *Handler {
 		inquiry:    usecase.NewInquiryUsecase(d.InquiryR),
 		attendance: usecase.NewAttendanceUsecase(d.Attend, poolWrap, d.Notify),
 		account:    usecase.NewAccountUsecase(d.Profiles, d.Supabase),
+		catalog:    usecase.NewCatalogUsecase(d.CatalogR),
+		asset:      usecase.NewAssetUsecase(d.AssetR, poolWrap, postgres.NewExecer(d.Pool), d.Notify),
 		profiles:   d.Profiles,
 	}
 }
 
 // Health melaporkan status layanan. Publik, tanpa autentikasi.
-// Dipakai health check agar halaman compro tetap bisa dipantau walau modul
-// internal bermasalah.
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := contextWithTimeout(r, 3*time.Second)
 	defer cancel()
@@ -61,6 +65,6 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	httpx.Data(w, http.StatusOK, map[string]any{
 		"status":  status,
 		"db":      db,
-		"version": "0.2.0",
+		"version": "0.3.0",
 	})
 }

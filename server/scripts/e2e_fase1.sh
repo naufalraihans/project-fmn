@@ -5,8 +5,8 @@
 #            FMN_SEED_PASSWORD (harus sama dengan hash di scripts/seed_local.sql),
 #            PSQL (path psql, default dari PATH).
 set -u
-if [ -z "${PGPASSWORD:-}" ] || [ -z "${FMN_SEED_PASSWORD:-}" ]; then
-  echo "PGPASSWORD dan FMN_SEED_PASSWORD wajib diset."
+if [ -z "${PGPASSWORD:-}" ]; then
+  echo "PGPASSWORD wajib diset."
   exit 2
 fi
 cd "$(dirname "$0")/../.."   # akar repo

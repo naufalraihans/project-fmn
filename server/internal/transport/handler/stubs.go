@@ -24,20 +24,6 @@ func notYet(w http.ResponseWriter, r *http.Request) {
 
 // stubRoutes memetakan pola ServeMux ke handler yang belum dibuat.
 var stubRoutes = map[string]http.HandlerFunc{
-	"GET /api/catalog/items":               notYet,
-	"POST /api/catalog/items":              notYet,
-	"PATCH /api/catalog/items/{id}":        notYet,
-	"DELETE /api/catalog/items/{id}":       notYet,
-	"GET /api/assets/{id}":                 notYet,
-	"POST /api/assets":                     notYet,
-	"PATCH /api/assets/{id}":               notYet,
-	"POST /api/assets/{id}/dispatch":       notYet,
-	"POST /api/assets/usages/{id}/return":  notYet,
-	"POST /api/assets/{id}/maintenance":    notYet,
-	"POST /api/assets/{id}/assignments":    notYet,
-	"DELETE /api/assets/{id}/assignments":  notYet,
-	"GET /api/events":                      notYet,
-	"POST /api/events":                     notYet,
 	"GET /api/invoices":                    notYet,
 	"POST /api/invoices":                   notYet,
 	"GET /api/invoices/{id}":               notYet,

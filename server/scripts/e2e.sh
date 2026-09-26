@@ -116,7 +116,9 @@ C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/attendance?from=$(date +%Y
 C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/accounts" -H "Authorization: Bearer $ADMIN")
 [ "$C" = "200" ] && pass "admin GET /api/accounts -> 200" || fail "admin accounts" "$C"
 C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/catalog/items" -H "Authorization: Bearer $ADMIN")
-[ "$C" = "501" ] && pass "admin GET /api/catalog/items -> lolos RBAC (501, belum dibuat)" || fail "admin catalog" "$C"
+# Katalog termasuk modul operasional yang DIWARISI admin (rbac.md, K1).
+# Yang tidak diwarisi hanya keuangan/invoice.
+[ "$C" = "200" ] && pass "admin GET /api/catalog/items -> 200 (warisan operasional)" || fail "admin catalog" "$C"
 
 echo "=== 9. tanpa token / token ngawur ==="
 C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/finance/summary)
