@@ -22,6 +22,11 @@ import (
 // Tanpa uji ini, rute bisa "hilang" antara dokumen dan kode tanpa ada yang sadar -
 // persis kelas temuan yang muncul di docs/arch/02-audit-consistency.md.
 
+// crlf dan cr adalah nama escape yang ditulis eksplisit supaya tidak ada
+// lagi insiden escape rusak di dalam komentar (pernah terjadi dan membuat
+// berkas ini gagal dikompilasi).
+const crlf = "\r\n"
+
 func openAPIRoutes(t *testing.T) [][2]string {
 	t.Helper()
 	raw, err := os.ReadFile("../../../docs/arch/openapi.yaml")
@@ -30,11 +35,17 @@ func openAPIRoutes(t *testing.T) [][2]string {
 	}
 	// parser YAML lengkap tidak tersedia di sini; pola path+method cukup andal
 	// karena berkas itu ditulis konsisten oleh dokumen arsitektur.
-	pathRe := regexp.MustCompile(`(?m)^  (/api/[A-Za-z0-9/{}._-]+):\s*$`)
-	methodRe := regexp.MustCompile(`(?m)^    (get|post|put|patch|delete):\s*$`)
+	pathRe := regexp.MustCompile(`(?m)^  (/api/[A-Za-z0-9/{}._-]+):[ \t]*$`)
+	methodRe := regexp.MustCompile(`(?m)^    (get|post|put|patch|delete):[ \t]*$`)
+
+	// Normalisasi akhir baris. Berkas ini CRLF, dan baris "paths:<CR>" TIDAK
+	// dianggap ber-prefix "paths:" oleh strings.HasPrefix. Tanpa normalisasi ini
+	// blok paths tidak pernah terdeteksi dan uji ini hanya menemukan 3 dari 54
+	// rute - uji yang "hijau" tanpa arti.
+	text := strings.ReplaceAll(string(raw), crlf, "\n")
 
 	var out [][2]string
-	lines := strings.Split(string(raw), "\n")
+	lines := strings.Split(text, "\n")
 	var current string
 	inPaths := false
 	for _, ln := range lines {
@@ -63,6 +74,8 @@ func openAPIRoutes(t *testing.T) [][2]string {
 
 func TestSetiapRuteOpenAPIAdaAturanRBAC(t *testing.T) {
 	routes := openAPIRoutes(t)
+	// Ambang ini menjaga uji tetap bermakna: bila parser rusak dan hanya
+	// menemukan segelintir rute, uji harus GAGAL, bukan lolos dengan tenang.
 	if len(routes) < 40 {
 		t.Fatalf("hanya terbaca %d rute dari openapi.yaml - pola parsing kemungkinan rusak", len(routes))
 	}
@@ -93,7 +106,6 @@ func TestSetiapRuteOpenAPIAdaAturanRBAC(t *testing.T) {
 func TestRuteTerimplementasiBukanStub(t *testing.T) {
 	terimplementasi := []string{
 		"GET /api/healthz",
-		"POST /api/auth/login",
 		"GET /api/auth/me",
 		// Fase 1 - compro
 		"GET /api/public/content",
@@ -116,14 +128,15 @@ func TestRuteTerimplementasiBukanStub(t *testing.T) {
 }
 
 // Setiap rute yang dijanjikan kontrak harus benar-benar terdaftar di router.
-// Diuji lewat perilaku: rute yang ada memberi 401 (bukan 404) saat tanpa token,
-// karena middleware Auth menolaknya lebih dulu.
+// Diuji lewat perilaku: rute yang ada memberi 401/403 (bukan 404) saat tanpa
+// token, karena middleware Auth menolaknya lebih dulu.
 func TestRuteKontrakTerdaftarDiRouter(t *testing.T) {
 	router := transport.NewRouter(transport.Deps{
 		Cfg: testConfig(),
 		// pool nil: rute stub tidak menyentuh DB, dan rute internal ditolak
 		// sebelum handler (401/403) sehingga pool tidak dipakai.
 		InquiryLimiter: middleware.NewRateLimit(5, 10*time.Minute),
+		Verifier:       middleware.NewHMACVerifier("uji-kontrak"),
 	})
 
 	for _, p := range handler.StubPatterns() {

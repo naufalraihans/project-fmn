@@ -48,8 +48,9 @@ Akun seed (password dibuat sendiri oleh pengembang, lihat `scripts/seed_local.sq
 | `FMN_MAX_BODY_BYTES` | tidak | `1048576` | Batas ukuran body. |
 | `FMN_INQUIRY_RATE_LIMIT` | tidak | `5` | Batas kiriman form inquiry per IP. |
 | `FMN_INQUIRY_RATE_WINDOW_MIN` | tidak | `10` | Jendela waktu batas form (menit). |
-| `FMN_SUPABASE_URL` | tidak | - | URL project Supabase (untuk Realtime). Kosong = realtime nonaktif. |
+| `FMN_SUPABASE_URL` | produksi: ya | - | URL project Supabase. Dipakai verifikasi token (JWKS) + Realtime. Kosong di dev = pakai HMAC lokal. |
 | `FMN_SUPABASE_SERVICE_KEY` | tidak | - | Service role key Supabase. Kosong = realtime nonaktif. |
+| `FMN_SUPABASE_ANON_KEY` | tidak | - | Anon key (dipakai frontend). |
 
 ## Struktur
 
@@ -80,8 +81,8 @@ Sudah jalan dan teruji:
 | Endpoint | Keterangan |
 |---|---|
 | `GET /api/healthz` | status layanan + koneksi DB |
-| `POST /api/auth/login` | login, pesan gagal seragam, akun nonaktif ditolak |
-| `GET /api/auth/me` | profil pengguna aktif |
+| `GET /api/auth/me` | profil pengguna aktif (peran dibaca dari DB, bukan token) |
+| Fase 1 compro | content, portfolio, inquiry, panel konten |
 | semua rute internal | RBAC sudah aktif (403/401 benar) walaupun handler belum dibuat |
 
 Belum dibuat: **semuanya sisanya**, terdaftar sebagai stub yang membalas
@@ -107,11 +108,31 @@ kru diblokir dari area admin, fail-closed rute tak terdaftar, CORS, header keama
 
 `golangci-lint` belum dipasang; untuk sekarang `go vet ./...` dijadikan gerbang minimum.
 
+## Autentikasi
+
+**Tidak ada endpoint login di backend.** Login, refresh, logout, dan lupa password
+ditangani **Supabase Auth** dan dipanggil frontend langsung. Backend hanya
+memverifikasi token (ES256 lewat JWKS) dan melayani data aplikasi.
+
+Alasannya (rinci di `../docs/arch/ADR-001-serverless-realtime.md`): Realtime
+Supabase hanya menerima token terbitannya sendiri, jadi backend tidak punya alasan
+memegang rahasia tambahan. Sempat ada `POST /api/auth/login` berbasis bcrypt di
+sini; **endpoint itu dihapus** karena dua jalur autentikasi = dua permukaan serangan.
+
+Peran aplikasi dibaca dari klaim **`app_role`** (diisi Custom Access Token Hook),
+bukan `role` milik Supabase yang selalu bernilai `authenticated`.
+
+Menguji rute internal secara lokal tanpa Supabase: pakai `scripts/devtoken.go`
+(CLI, bukan endpoint HTTP, supaya tidak ada jalur login kedua di server):
+
+```bash
+go run scripts/devtoken.go <user-uuid> superadmin "$FMN_JWT_SECRET"
+```
+
 ## Catatan penting
 
-1. **`password_hash` disimpan di tabel `profiles`.** Backend memverifikasi sendiri
-   dengan bcrypt dan menerbitkan JWT. Bila nanti pindah ke Supabase Auth, kosongkan
-   kolom itu dan alihkan verifikasi ke `auth.users`.
+1. **Kredensial ada di Supabase Auth**, bukan di tabel `profiles`. Kolom
+   `password_hash` sudah dihapus. Bila perlu dikembalikan, lihat riwayat git.
 2. **Uji kontrak mencegah rute hilang.** `contract_test.go` membaca `openapi.yaml`
    dan memastikan setiap rute punya aturan RBAC + terdaftar di router. Inilah cara
    mencegah terulangnya temuan di `../docs/arch/02-audit-consistency.md`.

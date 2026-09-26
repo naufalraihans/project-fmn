@@ -24,9 +24,6 @@ func notYet(w http.ResponseWriter, r *http.Request) {
 
 // stubRoutes memetakan pola ServeMux ke handler yang belum dibuat.
 var stubRoutes = map[string]http.HandlerFunc{
-	"POST /api/auth/refresh":               notYet,
-	"POST /api/auth/logout":                notYet,
-	"POST /api/auth/change-password":       notYet,
 	"GET /api/attendance/me":               notYet,
 	"POST /api/attendance/check-in":        notYet,
 	"POST /api/attendance/check-out":       notYet,

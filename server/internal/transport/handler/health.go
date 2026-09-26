@@ -9,21 +9,18 @@ import (
 
 	"github.com/fmn/server/internal/httpx"
 	"github.com/fmn/server/internal/repository/postgres"
-	"github.com/fmn/server/internal/token"
 	"github.com/fmn/server/internal/usecase"
 )
 
 type Handler struct {
 	pool    *pgxpool.Pool
-	issuer  *token.Issuer
 	content *usecase.ContentUsecase
 	inquiry *usecase.InquiryUsecase
 }
 
-func New(pool *pgxpool.Pool, jwtSecret string, jwtTTL time.Duration) *Handler {
+func New(pool *pgxpool.Pool) *Handler {
 	return &Handler{
 		pool:    pool,
-		issuer:  token.NewIssuer(jwtSecret, jwtTTL),
 		content: usecase.NewContentUsecase(postgres.NewContentRepo(pool)),
 		inquiry: usecase.NewInquiryUsecase(postgres.NewInquiryRepo(pool)),
 	}

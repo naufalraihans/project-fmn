@@ -11,8 +11,6 @@ func TestRutePublik(t *testing.T) {
 		{"GET", "/api/public/content"},
 		{"GET", "/api/public/portfolio"},
 		{"POST", "/api/public/inquiries"},
-		{"POST", "/api/auth/login"},
-		{"POST", "/api/auth/refresh"},
 	}
 	for _, c := range publik {
 		if !IsPublic(c.m, c.p) {

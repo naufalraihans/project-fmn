@@ -4,20 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/fmn/server/internal/httpx"
 	"github.com/fmn/server/internal/middleware"
 )
-
-type loginReq struct {
-	Identifier string `json:"identifier"`
-	Password   string `json:"password"`
-}
 
 type userRow struct {
 	ID                 string `json:"id"`
@@ -28,68 +21,23 @@ type userRow struct {
 	MustChangePassword bool   `json:"must_change_password"`
 }
 
-// Login memakai pesan generik untuk semua kegagalan supaya tidak membocorkan
-// apakah email terdaftar atau tidak (AC-AUTH-03).
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var body loginReq
-	if err := httpx.Decode(w, r, &body); err != nil {
-		httpx.Error(w, r, err)
-		return
-	}
-	body.Identifier = strings.TrimSpace(strings.ToLower(body.Identifier))
-	if body.Identifier == "" || body.Password == "" {
-		httpx.Error(w, r, httpx.BadRequest("Email/username dan password wajib diisi."))
-		return
-	}
+// CATATAN PENTING - tidak ada endpoint login di backend.
+//
+// Autentikasi (login, refresh, logout, lupa password) ditangani Supabase Auth
+// dan dipanggil LANGSUNG oleh frontend. Alasannya ada di
+// docs/arch/ADR-001-serverless-realtime.md:
+//   - Realtime Supabase memvalidasi token yang terbit dari Auth-nya sendiri;
+//   - menerbitkan token sendiri di backend berarti harus memegang secret
+//     Supabase, yang justru menambah rahasia yang beredar tanpa manfaat.
+//
+// Backend HANYA memverifikasi token (lihat internal/token/verifier.go) dan
+// melayani data aplikasi. Sempat ada POST /api/auth/login berbasis bcrypt di
+// sini; endpoint itu DIHAPUS karena dua jalur autentikasi berarti dua permukaan
+// serangan, dan jalur bcrypt tidak lagi terpakai frontend.
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	var (
-		id, nama, email, role, status, hash string
-		mcp                                 bool
-	)
-	err := h.pool.QueryRow(ctx, `
-		SELECT id::text, nama, email, role::text, status::text, must_change_password, password_hash
-		FROM profiles
-		WHERE lower(email) = $1 OR lower(username) = $1
-	`, body.Identifier).Scan(&id, &nama, &email, &role, &status, &mcp, &hash)
-	if errors.Is(err, pgx.ErrNoRows) {
-		httpx.Error(w, r, httpx.Unauthorized("Email/username atau password salah."))
-		return
-	}
-	if err != nil {
-		httpx.Error(w, r, err)
-		return
-	}
-
-	// Akun nonaktif ditolak dengan pesan yang sama (AC-AUTH-07).
-	if status != "aktif" {
-		httpx.Error(w, r, httpx.Unauthorized("Email/username atau password salah."))
-		return
-	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(body.Password)) != nil {
-		httpx.Error(w, r, httpx.Unauthorized("Email/username atau password salah."))
-		return
-	}
-
-	token, ttl, err := h.issuer.Issue(id, email, middleware.Role(role), mcp)
-	if err != nil {
-		httpx.Error(w, r, err)
-		return
-	}
-	httpx.Data(w, http.StatusOK, map[string]any{
-		"access_token":         token,
-		"expires_in":           ttl,
-		"must_change_password": mcp,
-		"user":                 userRow{id, nama, email, role, status, mcp},
-	})
-}
-
-// signToken tidak lagi dipakai: penerbitan token dipindah ke internal/token
-// supaya klaim yang dibaca Supabase Realtime (role=authenticated + app_role)
-// selalu konsisten antara login dan verifikasi.
-
+// Me mengembalikan profil pengguna yang sedang login.
+// Peran diambil dari DATABASE, bukan dari klaim token, supaya perubahan peran
+// langsung terlihat tanpa menunggu token kedaluwarsa.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	id := middleware.MustIdentity(r.Context())
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -101,6 +49,8 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		FROM profiles WHERE id = $1
 	`, id.UserID).Scan(&u.ID, &u.Nama, &u.Email, &u.Role, &u.Status, &u.MustChangePassword)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// Token sah tapi profil tidak ada: kemungkinan akun dihapus setelah token
+		// diterbitkan. 404, bukan 401, supaya jelas bedanya.
 		httpx.Error(w, r, httpx.NotFound("Akun tidak ditemukan."))
 		return
 	}

@@ -24,7 +24,7 @@ func TestRutePublikTidakKena401(t *testing.T) {
 	for _, c := range []struct{ m, p string }{
 		{"GET", "/api/healthz"},
 		{"GET", "/api/public/content"},
-		{"POST", "/api/auth/login"},
+		{"GET", "/api/public/portfolio"},
 	} {
 		dipanggil = false
 		rec := httptest.NewRecorder()

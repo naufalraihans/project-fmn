@@ -35,11 +35,12 @@ const stubsTerimplementasi = 11
 // (lewat middleware.IsPublic). Satu tempat keputusan lebih sulit salah daripada dua.
 func NewRouter(d Deps) http.Handler {
 	mux := http.NewServeMux()
-	h := handler.New(d.Pool, d.Cfg.JWTSecret, d.Cfg.AccessTTL)
+	h := handler.New(d.Pool)
 
 	// ---------- rute yang SUDAH terimplementasi ----------
 	mux.HandleFunc("GET /api/healthz", h.Health)
-	mux.HandleFunc("POST /api/auth/login", h.Login)
+	// Tidak ada rute login: autentikasi ditangani Supabase Auth dan dipanggil
+	// langsung oleh frontend. Lihat catatan di handler/auth.go.
 	mux.HandleFunc("GET /api/auth/me", h.Me)
 
 	// Fase 1 - compro publik

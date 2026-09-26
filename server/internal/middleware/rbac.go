@@ -23,8 +23,8 @@ var rules = []Rule{
 	{"POST", "/api/public/inquiries", nil},
 
 	// ---------- auth ----------
-	{"POST", "/api/auth/login", nil},
-	{"POST", "/api/auth/refresh", nil},
+	// login/refresh/logout TIDAK ada di sini: ketiganya ditangani Supabase Auth
+	// dan dipanggil frontend langsung, bukan lewat backend ini.
 	{"GET", "/api/auth/me", allRoles()},
 	{"POST", "/api/auth/logout", allRoles()},
 	{"POST", "/api/auth/change-password", allRoles()},

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Uji end-to-end backend: skema -> seed -> server -> login 3 peran -> RBAC.
 #
-# PRASYARAT (jangan ditulis di skrip):
+# PRASYARAT:
 #   PGPASSWORD   password superuser Postgres lokal
 #   PSQL         path ke psql (default: psql dari PATH)
+#
+# Autentikasi: backend TIDAK punya endpoint login (dikelola Supabase Auth).
+# Uji ini memakai token HMAC dari scripts/devtoken.go + FMN_JWT_SECRET,
+# yaitu jalur pengembangan lokal. Verifikasi token Supabase diuji terpisah
+# lewat internal/token (JWKS asli).
 #
 # Catatan Windows: curl di sini adalah curl native, jadi SEMUA path file
 # memakai bentuk Windows bertanda-garis-miring ($TMP), bukan /tmp.
@@ -54,14 +59,10 @@ BASE=http://localhost:8099
 # ambil field JSON memakai python (jq tidak tersedia)
 J() { python -c "import sys,json;d=json.load(sys.stdin);print(d$1)" 2>/dev/null; }
 
-# login <identifier> -> cetak access_token (kosong bila gagal)
-# Body JSON disusun TERPISAH dari kutipan shell supaya tidak mudah rusak.
-login() {
-  curl -s -X POST "$BASE/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$FMN_SEED_PASSWORD")"     | J "['data']['access_token']"
-}
-login_code() {
-  curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$2")"
-}
+# token <user-uuid> <peran> -> cetak token HMAC dev.
+# Backend TIDAK punya endpoint login (autentikasi ditangani Supabase Auth),
+# jadi uji lokal memakai jalur pengembangan ini.
+token() { go run scripts/devtoken.go "$1" "$2" "$FMN_JWT_SECRET"; }
 
 echo "=== 3. healthz (publik, tanpa token) ==="
 H=$(curl -s $BASE/api/healthz)
@@ -69,21 +70,23 @@ echo "  respons: $H"
 echo "$H" | grep -q '"status":"ok"' && pass "healthz melaporkan ok" || fail "healthz" "$H"
 
 echo "=== 4. login 3 peran ==="
-SUPER=$(login super@fmn.test)
-ADMIN=$(login admin@fmn.test)
-KRU=$(login kru@fmn.test)
+SUPER=$(token 11111111-1111-1111-1111-111111111111 superadmin)
+ADMIN=$(token 22222222-2222-2222-2222-222222222222 admin)
+KRU=$(token 33333333-3333-3333-3333-333333333333 user)
 [ -n "$SUPER" ] && pass "login superadmin dapat token" || fail "login superadmin" "kosong"
 [ -n "$ADMIN" ] && pass "login admin dapat token" || fail "login admin" "kosong"
 [ -n "$KRU" ] && pass "login kru dapat token" || fail "login kru" "kosong"
 
-echo "=== 5. login gagal (pesan harus seragam) ==="
-P1=$(curl -s -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json'   --data "$(printf '{"identifier":"%s","password":"%s"}' admin@fmn.test SALAH)")
-C1=$(login_code admin@fmn.test SALAH)
-[ "$C1" = "401" ] && pass "password salah -> 401" || fail "password salah" "$C1"
-C2=$(login_code nonaktif@fmn.test "$FMN_SEED_PASSWORD")
-[ "$C2" = "401" ] && pass "akun nonaktif -> 401" || fail "akun nonaktif" "$C2"
-P3=$(curl -s -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json'   --data "$(printf '{"identifier":"%s","password":"%s"}' tidak-ada@fmn.test SALAH)")
-[ "$P1" = "$P3" ] && pass "pesan akun ada == pesan akun tak ada (tak bocor)" || fail "pesan beda" "$P1 vs $P3"
+echo "=== 5. token tidak sah ditolak (login bukan tugas backend) ==="
+# Rute login sudah TIDAK ADA di backend; yang penting di sini adalah perilaku
+# verifikasi token: kosong, ngawur, dan bertanda tangan kunci lain.
+C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/auth/me)
+[ "$C" = "401" ] && pass "tanpa token -> 401" || fail "tanpa token" "$C"
+C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/auth/me -H "Authorization: Bearer token.ngawur.xxx")
+[ "$C" = "401" ] && pass "token ngawur -> 401" || fail "token ngawur" "$C"
+ALIEN=$(go run scripts/devtoken.go 11111111-1111-1111-1111-111111111111 superadmin "kunci-penyerang")
+C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/auth/me -H "Authorization: Bearer $ALIEN")
+[ "$C" = "401" ] && pass "token kunci lain -> 401" || fail "token kunci lain" "$C"
 
 echo "=== 6. keuangan & audit: 403 untuk admin/kru, lolos untuk superadmin ==="
 for pair in "admin:$ADMIN" "kru:$KRU"; do

@@ -46,7 +46,7 @@ grep -i error "$TMP/f1d.log" | head -3
 
 cd server
 export FMN_DATABASE_URL="postgres://postgres@localhost:5432/$DB?sslmode=disable"
-export FMN_JWT_SECRET="uji-fase1"
+export FMN_JWT_SECRET="uji-lokal-rahasia"
 export FMN_ADDR=":8098"
 # Batas laju dinaikkan dulu supaya uji validasi tidak keburu terblokir;
 # uji batas laju yang sebenarnya dilakukan di bagian 6 dengan batas kecil.
@@ -62,9 +62,10 @@ sleep 3
 kill -0 $PID 2>/dev/null || { echo "SERVER GAGAL"; tail -10 "$TMP/f1api.log"; exit 1; }
 B=http://localhost:8098
 J() { python -c "import sys,json;d=json.load(sys.stdin);print(d$1)" 2>/dev/null; }
-login() {
-  curl -s -X POST "$B/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$FMN_SEED_PASSWORD")"     | J "['data']['access_token']"
-}
+# token <user-uuid> <peran> -> cetak token HMAC dev.
+# Backend TIDAK punya endpoint login (autentikasi ditangani Supabase Auth),
+# jadi uji lokal memakai jalur pengembangan ini.
+token() { go run scripts/devtoken.go "$1" "$2" "$FMN_JWT_SECRET"; }
 
 echo "=== 1. konten publik tanpa token ==="
 C=$(curl -s -o /dev/null -w "%{http_code}" $B/api/public/content)
@@ -126,8 +127,8 @@ echo "   dari 22 kiriman: $TERIMA diterima, $TOLAK ditolak 429"
 [ "$TERIMA" -le 20 ] && pass "diterima tidak melampaui batas ($TERIMA <= 20)" || fail "batas tertembus" "$TERIMA diterima"
 
 echo "=== 7. panel internal butuh peran ==="
-SUPER=$(login super@fmn.test)
-KRU=$(login kru@fmn.test)
+SUPER=$(token 11111111-1111-1111-1111-111111111111 superadmin)
+KRU=$(token 33333333-3333-3333-3333-333333333333 user)
 C=$(curl -s -o /dev/null -w "%{http_code}" $B/api/content -H "Authorization: Bearer $SUPER")
 [ "$C" = "200" ] && pass "superadmin lihat konten internal -> 200" || fail "content internal" "$C"
 C=$(curl -s $B/api/content -H "Authorization: Bearer $SUPER")

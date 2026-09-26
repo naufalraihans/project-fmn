@@ -20,6 +20,10 @@ tags:
   - name: Public
     description: Tanpa login, dipakai halaman compro
   - name: Auth
+    description: |
+      Hanya GET /api/auth/me. Login, refresh, logout, dan ganti password
+      ditangani Supabase Auth dan dipanggil frontend langsung, bukan lewat
+      backend ini (lihat docs/arch/ADR-001-serverless-realtime.md).
   - name: Accounts
   - name: Attendance
   - name: Catalog
@@ -112,65 +116,6 @@ paths:
         "429": { $ref: '#/components/responses/TooManyRequests' }
 
   # ============================================================ AUTH
-  /api/auth/login:
-    post:
-      tags: [Auth]
-      summary: Login (tanpa registrasi publik)
-      description: |
-        Respons generik, tidak membedakan email tidak ada vs password salah (AC-AUTH-03).
-        Rate limit: 5 percobaan gagal per IP per 5 menit (AC-AUTH-04).
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [identifier, password]
-              properties:
-                identifier: { type: string, description: Email atau username }
-                password: { type: string, minLength: 8 }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/AuthSession' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-        "429": { $ref: '#/components/responses/TooManyRequests' }
-  /api/auth/refresh:
-    post:
-      tags: [Auth]
-      summary: Tukar refresh token dengan access token baru
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [refresh_token]
-              properties:
-                refresh_token: { type: string }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { $ref: '#/components/schemas/AuthSession' }
-        "401": { $ref: '#/components/responses/Unauthorized' }
-  /api/auth/logout:
-    post:
-      tags: [Auth]
-      summary: Akhiri sesi (revoke refresh token)
-      responses:
-        "204": { description: Tanpa isi }
   /api/auth/me:
     get:
       tags: [Auth]
@@ -184,25 +129,6 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/User' }
-  /api/auth/change-password:
-    post:
-      tags: [Auth]
-      summary: Ganti password (wajib saat login pertama)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [current_password, new_password]
-              properties:
-                current_password: { type: string }
-                new_password: { type: string, minLength: 8 }
-      responses:
-        "200": { description: OK }
-        "400": { $ref: '#/components/responses/BadRequest' }
-
-  # ============================================================ ACCOUNTS
   /api/accounts:
     get:
       tags: [Accounts]
