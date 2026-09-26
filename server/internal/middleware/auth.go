@@ -187,11 +187,29 @@ type TokenVerifier struct {
 	secret []byte
 }
 
-func NewVerifier(secret string) *TokenVerifier {
-	return &TokenVerifier{secret: []byte(secret)}
+func NewVerifier(secret string) *HMACVerifier {
+	return NewHMACVerifier(secret)
 }
 
-func (v *TokenVerifier) Verify(raw string) (Identity, error) {
+// Verifier memverifikasi token dan mengembalikan identitas.
+// Dibuat interface supaya sumber token dapat diganti tanpa menyentuh middleware:
+// sekarang Supabase Auth (ES256 lewat JWKS), dahulu HMAC buatan sendiri.
+type Verifier interface {
+	Verify(raw string) (Identity, error)
+}
+
+// HMACVerifier memverifikasi token bertanda tangan HS256 dengan shared secret.
+// Dipertahankan untuk pengembangan lokal dan pengujian, TIDAK dipakai di produksi
+// sejak autentikasi pindah ke Supabase Auth (lihat ADR-001).
+type HMACVerifier struct {
+	secret []byte
+}
+
+func NewHMACVerifier(secret string) *HMACVerifier {
+	return &HMACVerifier{secret: []byte(secret)}
+}
+
+func (v *HMACVerifier) Verify(raw string) (Identity, error) {
 	if raw == "" {
 		return Identity{}, httpx.Unauthorized("Sesi tidak valid, silakan login kembali.")
 	}
@@ -212,7 +230,9 @@ func (v *TokenVerifier) Verify(raw string) (Identity, error) {
 	}, nil
 }
 
-func Auth(v *TokenVerifier) func(http.Handler) http.Handler {
+// Auth memasang autentikasi pada seluruh rute. Rute publik dilewatkan di sini
+// (bukan di router) supaya hanya ada satu tempat keputusan.
+func Auth(v Verifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Rute publik dilewati lebih awal. Tanpa ini, rute publik kena 401

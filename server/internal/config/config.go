@@ -27,6 +27,8 @@ type Config struct {
 	// Supabase Realtime (ADR-001). Bila kosong, realtime menjadi no-op.
 	SupabaseURL        string
 	SupabaseServiceKey string
+	// SupabaseAnonKey dipakai frontend; backend hanya meneruskannya bila perlu.
+	SupabaseAnonKey string
 
 	// Port untuk mode serverless (Vercel). Kosongkan untuk mode server biasa.
 	Vercel bool
@@ -49,7 +51,15 @@ func Load() (Config, error) {
 	// supaya tidak perlu menduplikasi nilai saat deploy.
 	c.SupabaseURL = env("FMN_SUPABASE_URL", os.Getenv("SUPABASE_URL"))
 	c.SupabaseServiceKey = env("FMN_SUPABASE_SERVICE_KEY", os.Getenv("SUPABASE_SERVICE_ROLE_KEY"))
+	c.SupabaseAnonKey = env("FMN_SUPABASE_ANON_KEY", os.Getenv("SUPABASE_ANON_KEY"))
 	c.Vercel = os.Getenv("VERCEL") != ""
+
+	// Supabase URL wajib bila verifikasi token memakai Supabase Auth.
+	// Tanpa ini, seluruh rute internal akan menolak setiap token (401) karena
+	// JWKS tidak dapat diambil.
+	if c.SupabaseURL == "" && c.Env != "dev" {
+		return c, fmt.Errorf("FMN_SUPABASE_URL wajib diisi saat FMN_ENV=%s", c.Env)
+	}
 
 	origins := env("FMN_ALLOWED_ORIGINS", "http://localhost:5173")
 	for _, o := range strings.Split(origins, ",") {

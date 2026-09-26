@@ -41,6 +41,7 @@ func main() {
 			Cfg:            cfg,
 			Pool:           pool,
 			InquiryLimiter: middleware.NewRateLimit(cfg.InquiryRateLimit, cfg.InquiryRateWindow),
+			Verifier:       transport.BuildVerifier(cfg),
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

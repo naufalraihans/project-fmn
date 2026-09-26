@@ -89,6 +89,21 @@ Broadcast memakai service role key.
 
 ## Catatan operasional (dari dokumentasi Supabase, diambil 2026-09-26)
 
+- **Kunci project FMN bertipe ES256 (asimetris), bukan HS256.** Dibuktikan lewat
+  probe `GET /auth/v1/.well-known/jwks.json` pada 2026-09-26: satu kunci,
+  `kty=EC`, `alg=ES256`, `crv=P-256`. Konsekuensi: verifikasi memakai kunci
+  publik dari JWKS, dan backend **tidak menyimpan rahasia apa pun** untuk
+  memverifikasi token. Verifier menolak HS256 secara eksplisit, karena menerima
+  algoritma simetris membuka celah pemalsuan lewat shared secret.
+- Klaim `role` pada token Supabase bernilai `authenticated`. Peran aplikasi
+  WAJIB memakai klaim terpisah `app_role` (diisi Custom Access Token Hook).
+- **`grant select on table public.profiles to supabase_auth_admin` wajib ada.**
+  Hook dijalankan sebagai peran itu, bukan pemilik tabel. Tanpa grant SELECT,
+  hook gagal membaca peran, `app_role` jatuh ke nilai default, dan semua
+  pengguna tampak sebagai kru - gejalanya "login sukses tapi dashboard kosong",
+  bukan pesan error, sehingga sulit dilacak. Snippet di sebagian dokumentasi
+  hanya menyebut `grant execute` + `grant usage`, sehingga baris ini mudah
+  terlewat.
 - RLS pada `realtime.messages` **sudah aktif**; jangan menulis
   `ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY` - akan gagal
   `42501 must be owner of table messages` dan membatalkan seluruh transaksi migrasi
@@ -101,3 +116,6 @@ Broadcast memakai service role key.
 - Helper `realtime.topic()` mengembalikan nama kanal yang sedang diminta klien,
   dipakai di dalam policy.
 - Kolom `realtime.messages.extension` bernilai `broadcast` atau `presence`.
+- **Status hook aktif/nonaktif tidak terlihat dari SQL** - itu setelan dashboard
+  (Authentication -> Auth Hooks -> Custom Access Token). Pemeriksaan lewat SQL
+  hanya bisa memastikan fungsinya ada, bukan aktif.

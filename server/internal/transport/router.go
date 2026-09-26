@@ -16,7 +16,14 @@ type Deps struct {
 	Cfg            config.Config
 	Pool           *pgxpool.Pool
 	InquiryLimiter *middleware.RateLimit
+	// Verifier memverifikasi token. Produksi memakai Supabase Auth (ES256/JWKS);
+	// pengujian dapat menyuntikkan verifier lain tanpa menyentuh router.
+	Verifier middleware.Verifier
 }
+
+// stubsTerimplementasi adalah jumlah rute kontrak yang sudah punya handler nyata.
+// Dipakai untuk log saat server menyala; dijaga uji kontrak.
+const stubsTerimplementasi = 11
 
 // NewRouter menyusun rute beserta urutan middleware-nya.
 //
@@ -52,11 +59,11 @@ func NewRouter(d Deps) http.Handler {
 	// Didaftarkan supaya otorisasinya tetap teruji (rute tak terdaftar tidak
 	// bisa diuji RBAC-nya, dan pemanggil dapat 404 yang menyesatkan).
 	stubs := handler.RegisterStubs(mux)
-	slog.Info("rute kontrak terdaftar", "terimplementasi", 11, "stub", stubs)
+	slog.Info("rute kontrak terdaftar", "terimplementasi", stubsTerimplementasi, "stub", stubs)
 
 	var h2 http.Handler = mux
 	h2 = middleware.RBAC(h2)
-	h2 = middleware.Auth(middleware.NewVerifier(d.Cfg.JWTSecret))(h2)
+	h2 = middleware.Auth(d.Verifier)(h2)
 	h2 = middleware.BodyLimit(d.Cfg.MaxBodyBytes)(h2)
 	h2 = middleware.SecurityHeaders(h2)
 	h2 = middleware.CORS(d.Cfg.AllowedOrigins)(h2)
