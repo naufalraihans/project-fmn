@@ -1,64 +1,169 @@
-# Deploy Web FMN ke Vercel (satu project, frontend + backend)
+# Deploy Web FMN ke Vercel (DUA project dari satu repo)
 
-Satu project Vercel menampung DUA hal: SvelteKit (`web/`) sebagai halaman,
-dan Go (`server/api/index.go`) sebagai function di `/api/*`.
+Repo: `naufalraihans/project-fmn`. Satu repo, **dua project Vercel**:
 
-## 1. Hubungkan repo
+| Project | Root Directory | Isi |
+|---|---|---|
+| `fmn-backend` | `server` | API Go sebagai Serverless Function |
+| `fmn-frontend` | `web` | Situs SvelteKit (compro + dashboard) |
 
-1. Buka https://vercel.com/new, pilih repo `naufalraihans/project-fmn`.
-2. Framework Preset: **SvelteKit** (terdeteksi dari `web/` bila Root Directory
-   diisi `web` - JANGAN isi Root Directory; biarkan root repo karena
-   `vercel.json` di root yang mengatur build + rewrites).
-3. Build Command dan Output Directory sudah ditulis di `vercel.json`, jadi
-   biarkan bawaan bila Vercel menawarkannya.
+## Kenapa dua project, bukan satu
 
-## 2. Environment Variables (wajib)
+Model "satu project untuk semuanya" yang sempat dirancang di dokumen ini
+**tidak bisa jalan**, dan ini bukan soal selera:
 
-Isi di Project Settings -> Environment Variables. Berlaku untuk Production,
-Preview, dan Development.
+1. Runtime Go Vercel menuntut **`go.mod` berada di root project**. Di repo ini
+   `go.mod` ada di `server/`, bukan di root repo.
+2. Root repo juga tidak punya `package.json`; `package.json` ada di `web/`.
+   Kalau dijadikan satu project, dua build system berebut satu root dan salah
+   satunya pasti gagal.
+
+Karena itu tiap bagian dijadikan project sendiri dengan Root Directory masing-masing.
+Pola ini sama dengan yang sudah dipakai di project lain (`project_mikon/docs/deployment.md`).
+
+Catatan: berkas `vercel.json` lama di root repo sudah **dihapus** karena memuat
+campuran dua model tersebut (`buildCommand` SvelteKit + `rewrites` ke function Go)
+dan `outputDirectory: web/build` yang tidak pernah ada setelah build. Sisa
+campuran itulah yang membuat setup env terasa membingungkan.
+
+---
+
+## Urutan deploy (penting, jangan dibalik)
+
+Deploy **backend dulu**, karena URL backend dibutuhkan frontend. Setelah frontend
+jadi, kembali ke backend untuk mengisi `FMN_ALLOWED_ORIGINS`.
+
+```
+1. Project backend  -> dapat URL backend
+2. Isi PUBLIC_API_BASE frontend dengan URL itu
+3. Deploy frontend  -> dapat URL frontend
+4. Kembali ke backend: FMN_ALLOWED_ORIGINS = URL frontend
+5. Redeploy backend -> selesai
+```
+
+---
+
+## Project 1: backend (`fmn-backend`)
+
+1. https://vercel.com/new, pilih repo `naufalraihans/project-fmn`.
+2. **Root Directory: `server`** (klik Edit, pilih folder `server`).
+3. Framework Preset: biarkan terdeteksi otomatis (**Go**).
+4. Build/Output/Install Command: biarkan bawaan.
+5. Environment Variables (Production + Preview + Development):
+
+| Nama | Isi | Catatan |
+|---|---|---|
+| `FMN_ENV` | `production` | wajib |
+| `FMN_DATABASE_URL` | DSN Postgres Supabase | lihat bagian DSN di bawah |
+| `FMN_JWT_SECRET` | string acak panjang | dipakai jalur dev/HMAC; tetap wajib |
+| `FMN_SUPABASE_URL` | `https://winpznjtiznpksmwymei.supabase.co` | wajib |
+| `FMN_SUPABASE_SERVICE_KEY` | service_role key | **rahasia** |
+| `FMN_ALLOWED_ORIGINS` | URL frontend, koma-pisah | diisi di langkah 4 |
+| `FMN_ACCESS_TTL_MIN` | `15` | opsional |
+| `FMN_REFRESH_TTL_DAY` | `14` | opsional |
+| `FMN_MAX_BODY_BYTES` | `1048576` | opsional |
+
+`FMN_JWT_SECRET` siap pakai (dibuat acak, boleh diganti):
+
+```
+F5K7K5/9AvDHK0vddKubBhoderAS3a+H26WldDDjJfn1y3aZyCWpqwqB1a4h2qvN
+```
+
+Verifikasi token di produksi memakai JWKS Supabase (ES256), bukan secret ini.
+`FMN_JWT_SECRET` hanya dipakai bila `FMN_SUPABASE_URL` kosong - tapi tetap wajib
+diisi karena `config.Load()` menolak start tanpa itu saat `FMN_ENV != dev`.
+
+### DSN dan Supabase pooler (`FMN_DATABASE_URL`)
+
+Ambil dari Supabase, tapi **pilih dengan sadar**:
+
+- **Pilih "Session pooler" (port 5432)** - cara paling aman, dipakai apa adanya.
+  Ini yang cocok dengan `server/internal/repository/postgres/pool.go` sekarang
+  (pgx memakai prepared statement bernama; mode ini mendukungnya).
+- Kalau memakai **"Transaction pooler" (port 6543)**, prepared statement bernama
+  tidak didukung Supavisor dan query bisa gagal intermiten. Bila tetap memilih
+  6543, **wajib menambahkan** parameter berikut di akhir DSN:
+  ```
+  ...&default_query_exec_mode=simple_protocol
+  ```
+
+Password DSN memuat karakter khusus, jadi **percent-encode**:
+
+| Karakter | Ganti dengan |
+|---|---|
+| `=` | `%3D` |
+| `@` | `%40` |
+| `#` | `%23` |
+| `/` | `%2F` |
+
+Format akhir:
+
+```
+postgresql://postgres.winpznjtiznpksmwymei:PASSWORD_TERENCODE@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+```
+
+### Yang perlu diketahui soal function ini
+
+- Satu function di `server/api/index.go`, rute `/api/*` diarahkan ke sana lewat
+  `server/vercel.json`.
+- Function berumur pendek (maks 30 dtk di paket Hobby). Pool DB dibuka sekali per
+  instans lalu dipakai ulang, jadi cold start pertama memang lebih lambat.
+- **Tidak ada WebSocket** di backend. Realtime dipegang Supabase Realtime
+  (kanal privat `fmn:ops` dan `fmn:finance`). Lihat `docs/arch/ADR-001-serverless-realtime.md`.
+- Blok `functions` di `vercel.json` **tidak** dipakai; pola itu pernah membuat
+  build Go di Vercel gagal.
+
+---
+
+## Project 2: frontend (`fmn-frontend`)
+
+1. https://vercel.com/new, pilih repo yang sama.
+2. **Root Directory: `web`**.
+3. Framework Preset: **SvelteKit**.
+4. Build/Output/Install: biarkan bawaan (Vercel mendeteksi `bun.lock`).
+5. Environment Variables:
 
 | Nama | Isi | Dipakai |
 |---|---|---|
-| `PUBLIC_SUPABASE_URL` | `https://winpznjtiznpksmwymei.supabase.co` | FE (browser) |
-| `PUBLIC_SUPABASE_ANON_KEY` | anon key project Supabase | FE (browser) |
-| `PUBLIC_API_BASE` | URL backend Go | FE (browser) |
-| `SUPABASE_URL` | `https://winpznjtiznpksmwymei.supabase.co` | BE function |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key | BE function |
-| `FMN_DATABASE_URL` | connection string pooler (password percent-encoded) | BE function |
-| `FMN_ENV` | `production` | BE function |
-| `FMN_JWT_SECRET` | string acak panjang | BE function |
-| `FMN_ALLOWED_ORIGINS` | domain produksi FE, koma-pisah | BE function |
+| `PUBLIC_SUPABASE_URL` | `https://winpznjtiznpksmwymei.supabase.co` | browser |
+| `PUBLIC_SUPABASE_ANON_KEY` | anon / publishable key | browser |
+| `SUPABASE_ANON_KEY` | **sama** dengan anon key di atas | server (penjaga `/app`) |
+| `PUBLIC_API_BASE` | URL backend, mis. `https://fmn-backend.vercel.app` | browser |
 
-Catatan:
+Dua catatan yang gampang bikin gagal:
 
-- **Dua pilihan `PUBLIC_API_BASE`:**
-  - **A (satu project, disarankan):** isi dengan domain Vercel sendiri
-    (`https://<project>.vercel.app`). Request `/api/*` diteruskan ke function
-    Go lewat rewrites di `vercel.json`. Tanpa CORS tambahan.
-  - **B (backend terpisah):** isi dengan URL deploy backend lain. Wajib
-    tambahkan domain FE ke `FMN_ALLOWED_ORIGINS`, kalau tidak browser menolak
-    (CORS).
-- `FMN_DATABASE_URL` memakai pooler Supabase (port 5432, user
-  `postgres.winpznjtiznpksmwymei`). Password mengandung `=` dan `@`, jadi
-  wajib percent-encode (`%3D`, `%40`) bila ditaruh di URL.
-- `FMN_JWT_SECRET` hanya dipakai jalur dev lokal (HMAC). Di produksi, token
-  diverifikasi lewat JWKS Supabase. Tetap wajib diisi (config menolak start
-  bila kosong di luar dev).
-- JANGAN taruh `service_role` key di variabel `PUBLIC_*` - variabel PUBLIC
-  ikut terkirim ke browser.
+- `SUPABASE_ANON_KEY` (tanpa awalan `PUBLIC_`) **wajib ada**. `web/src/lib/supabase-server.ts`
+  membacanya saat menjaga halaman `/app` di server. Kalau kosong, halaman internal
+  gagal render dengan pesan "Supabase belum dikonfigurasi di server".
+- Hanya variabel berawalan `PUBLIC_` yang sampai ke browser. Jangan pernah
+  menaruh `service_role` key di variabel `PUBLIC_*`.
 
-## 3. Batasan yang perlu diketahui
+---
 
-- Function Go di Vercel berumur pendek (max 30 dtk). Pool DB dibuka sekali per
-  instans lalu dipakai ulang (`server/api/index.go`).
-- TIDAK ada WebSocket di backend. Realtime dipegang Supabase Realtime, kanal
-  privat `fmn:ops` dan `fmn:finance` (lihat `docs/arch/ADR-001-serverless-realtime.md`).
-- Blok `functions` TIDAK dipakai di `vercel.json`: pola itu pernah membuat
-  build Go di Vercel gagal. Yang dipakai hanya `rewrites` + deteksi runtime
-  otomatis dari file `server/api/*.go`.
+## Setelah deploy: cek berurutan
 
-## 4. Cek setelah deploy
+1. `https://<backend>/api/healthz` -> `{"data":{"status":"ok","db":"ok",...}}`.
+   Kalau `db` bernilai `down`, berarti `FMN_DATABASE_URL` salah.
+2. `https://<frontend>/` -> compro tayang. Kalau backend belum siap, halaman tetap
+   tayang dengan konten bawaan (memang dirancang begitu).
+3. `https://<frontend>/masuk` -> login dengan akun yang sudah ada di tabel `profiles`.
+4. Login sebagai admin, lalu buka `/api/finance/summary` -> harus **403** (AC-KEU-04).
+   Kalau tembus, `FMN_ALLOWED_ORIGINS`/RBAC bermasalah.
 
-1. Buka `/` - halaman compro tayang (dengan konten bawaan bila DB kosong).
-2. Buka `/api/healthz` - `{"data":{"status":"ok",...}}`.
-3. Login di `/masuk` dengan akun Supabase yang sudah ada di `profiles`.
+## Jebakan CORS
+
+Frontend memanggil backend dari **browser**, jadi dua project ini beda origin dan
+CORS wajib benar:
+
+- `FMN_ALLOWED_ORIGINS` harus memuat domain frontend **persis** (tanpa garis miring
+  di akhir), mis. `https://fmn-frontend.vercel.app,http://localhost:5173`.
+- Deployment **preview** Vercel punya URL berbeda dan **tidak** akan masuk allowlist.
+  Kalau mau preview ikut jalan, tambahkan domain preview-nya, atau pakai satu
+  domain kustom tetap untuk produksi.
+
+## Skema database
+
+`schema.sql` (di `docs/arch/`) dijalankan **manual** ke Supabase - serverless tidak
+menjalankan migrasi otomatis. Termasuk `auth.sql` untuk Custom Access Token Hook.
+Ingat: `grant select on table public.profiles to supabase_auth_admin` wajib ada,
+kalau tidak semua pengguna tampak sebagai kru (lihat ADR-001).
