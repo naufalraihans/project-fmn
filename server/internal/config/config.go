@@ -34,9 +34,14 @@ type Config struct {
 	Vercel bool
 }
 
+// Port mengikuti PORT bila ada, karena platform serverless (Vercel) menetapkan
+// port lewat variabel itu dan WAJIB dipakai. Sebelumnya alamat selalu ':8080',
+// sehingga di Vercel server mendengar di port yang salah: fungsi ikut mati saat
+// dipanggil dan yang terlihat hanya FUNCTION_INVOCATION_FAILED, bukan pesan
+// aplikasi. FMN_ADDR tetap memberi jalan untuk pengembangan lokal.
 func Load() (Config, error) {
 	c := Config{
-		Addr:         env("FMN_ADDR", ":8080"),
+		Addr:         env("FMN_ADDR", ":"+env("PORT", "8080")),
 		DatabaseURL:  os.Getenv("FMN_DATABASE_URL"),
 		JWTSecret:    os.Getenv("FMN_JWT_SECRET"),
 		MaxBodyBytes: int64(envInt("FMN_MAX_BODY_BYTES", 1<<20)),
