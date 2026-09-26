@@ -75,11 +75,23 @@ $$;
 --   - middleware RBAC backend Go
 --
 -- Tanda tangan fungsi HARUS persis `(event jsonb) returns jsonb` dengan
--- kebalikan berbentuk {"claims": {...}}; Supabase menolak bentuk lain.
+-- kembalian berbentuk {"claims": {...}}; Supabase menolak bentuk lain.
+--
+-- PENTING - jangan tandai fungsi ini STABLE:
+-- Versi pertama memakai STABLE dan akibatnya perubahan peran tertinggal satu
+-- transaksi. Terbukti saat pengujian: UPDATE profiles SET role='superadmin'
+-- lalu login ulang tetap menghasilkan app_role='user'. Penyebabnya Postgres
+-- memakai snapshot dalam transaksi yang sama. Karena fungsi ini membaca tabel
+-- yang berubah pada transaksi yang sedang berjalan, ia TIDAK boleh STABLE.
+--
+-- SECURITY DEFINER dipakai supaya fungsi tetap bisa membaca profiles walaupun
+-- dipanggil oleh peran dengan hak terbatas (hook berjalan sebagai
+-- supabase_auth_admin). search_path dikunci agar tidak bisa dibajak.
 CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
-STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   claims  jsonb;
@@ -132,19 +144,27 @@ $$;
 -- policy realtime tidak akan cocok dan kanal privat tidak bisa diakses.
 
 -- ---------------------------------------------------------------- 5. RLS: profil sendiri
+-- Dijaga idempoten: berkas ini sering dijalankan ulang saat memperbarui hook,
+-- dan CREATE POLICY tidak punya varian IF NOT EXISTS.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
     RETURN;
   END IF;
 
-  EXECUTE $p$
-    CREATE POLICY profiles_own_read ON public.profiles
-    FOR SELECT TO authenticated
-    USING (id = auth.uid())
-  $p$;
-
-  RAISE NOTICE 'Policy profiles_own_read terpasang (baca profil sendiri saja).';
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'profiles' AND policyname = 'profiles_own_read'
+  ) THEN
+    RAISE NOTICE 'Policy profiles_own_read sudah ada - dilewati.';
+  ELSE
+    EXECUTE $p$
+      CREATE POLICY profiles_own_read ON public.profiles
+      FOR SELECT TO authenticated
+      USING (id = auth.uid())
+    $p$;
+    RAISE NOTICE 'Policy profiles_own_read terpasang (baca profil sendiri saja).';
+  END IF;
 END;
 $$;
 
