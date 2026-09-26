@@ -55,6 +55,10 @@ string.
 FMN_DATABASE_URL=<tempel di sini>
 ```
 
+Nilai kerangka DSN-nya sudah terisi di `.env.backend`; **hanya password** yang
+belum. Ganti `PASSWORD_BELUM_DIISI` dengan password database, **setelah**
+di-percent-encode.
+
 Kenapa Session pooler (port 5432) dan bukan Transaction pooler (6543):
 `server/internal/repository/postgres/pool.go` memakai pgx dengan prepared
 statement bernama, dan mode transaction pooler tidak mendukungnya sehingga query

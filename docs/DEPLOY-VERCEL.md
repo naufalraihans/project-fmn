@@ -104,8 +104,24 @@ postgresql://postgres.winpznjtiznpksmwymei:PASSWORD_TERENCODE@aws-0-ap-southeast
 
 ### Yang perlu diketahui soal function ini
 
-- Satu function di `server/api/index.go`, rute `/api/*` diarahkan ke sana lewat
-  `server/vercel.json`.
+- Satu function di `server/api/index.go`. `server/vercel.json` mengarahkan semua
+  path ke function itu **beserta parameter `__path`**:
+
+  ```json
+  { "rewrites": [{ "source": "/(.*)", "destination": "/api/index?__path=$1" }] }
+  ```
+
+  Parameter `__path` **wajib ada**. `api/index.go#restorePath()` memakainya untuk
+  memulihkan path asli, karena rewrite Vercel menyembunyikan path di query.
+  Kalau `__path` dihilangkan, `r.URL.Path` menjadi `/api/index` dan seluruh rute
+  membalas 404.
+
+- Server WAJIB mendengar di port dari environment `PORT`. Vercel mendeteksi
+  `server/cmd/api/main.go` sebagai Go server dan menjalankannya, jadi server yang
+  mendengar di port lain akan membuat function mati saat dipanggil - gejalanya
+  `FUNCTION_INVOCATION_FAILED` di setiap request, tanpa satu pun pesan aplikasi
+  di log. `internal/config` sudah mengikuti `PORT` dan dijaga
+  `internal/config/config_test.go`.
 - Function berumur pendek (maks 30 dtk di paket Hobby). Pool DB dibuka sekali per
   instans lalu dipakai ulang, jadi cold start pertama memang lebih lambat.
 - **Tidak ada WebSocket** di backend. Realtime dipegang Supabase Realtime
