@@ -102,32 +102,35 @@ Format akhir:
 postgresql://postgres.winpznjtiznpksmwymei:PASSWORD_TERENCODE@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
 ```
 
-### Yang perlu diketahui soal function ini
+### Yang perlu diketahui soal backend di Vercel
 
-- Satu function di `server/api/index.go`. `server/vercel.json` mengarahkan semua
-  path ke function itu **beserta parameter `__path`**:
+Diverifikasi 2026-09-27 dari log runtime produksi, bukan dari dugaan:
 
-  ```json
-  { "rewrites": [{ "source": "/(.*)", "destination": "/api/index?__path=$1" }] }
-  ```
+- **Vercel memakai Go Framework Preset dan menjalankan `server/cmd/api/main.go`
+  sebagai server**, bukan `server/api/index.go` sebagai function. Buktinya log
+  produksi memuat `msg="server mulai" addr=:45965 env=production`, dan log itu
+  hanya ada di `cmd/api/main.go`. Konsekuensinya `api/index.go` (beserta
+  `restorePath()` dan query `__path`) **tidak pernah dipakai**.
 
-  Parameter `__path` **wajib ada**. `api/index.go#restorePath()` memakainya untuk
-  memulihkan path asli, karena rewrite Vercel menyembunyikan path di query.
-  Kalau `__path` dihilangkan, `r.URL.Path` menjadi `/api/index` dan seluruh rute
-  membalas 404.
+- Karena itu **`vercel.json` TIDAK diperlukan** di folder `server/`. Sempat ada
+  rewrite `/(.*)` -> `/api/index?__path=$1`, dan itu justru merusak: query
+  `__path` diabaikan server, `r.URL.Path` tetap `/api/index`, rute asli tidak
+  pernah cocok, dan seluruh permintaan dibalas 401. Berkas itu sudah dihapus.
+  Request kini sampai apa adanya ke server, yang memang sudah mendaftarkan
+  rute `/api/*`.
 
-- Server WAJIB mendengar di port dari environment `PORT`. Vercel mendeteksi
-  `server/cmd/api/main.go` sebagai Go server dan menjalankannya, jadi server yang
-  mendengar di port lain akan membuat function mati saat dipanggil - gejalanya
-  `FUNCTION_INVOCATION_FAILED` di setiap request, tanpa satu pun pesan aplikasi
-  di log. `internal/config` sudah mengikuti `PORT` dan dijaga
-  `internal/config/config_test.go`.
-- Function berumur pendek (maks 30 dtk di paket Hobby). Pool DB dibuka sekali per
-  instans lalu dipakai ulang, jadi cold start pertama memang lebih lambat.
-- **Tidak ada WebSocket** di backend. Realtime dipegang Supabase Realtime
-  (kanal privat `fmn:ops` dan `fmn:finance`). Lihat `docs/arch/ADR-001-serverless-realtime.md`.
-- Blok `functions` di `vercel.json` **tidak** dipakai; pola itu pernah membuat
-  build Go di Vercel gagal.
+- Server WAJIB mendengar di port dari environment `PORT`, karena Vercel
+  menetapkannya. Sebelumnya alamat selalu `:8080`, sehingga server mendengar di
+  port yang salah: function mati setiap dipanggil dan yang terlihat hanya
+  `FUNCTION_INVOCATION_FAILED` tanpa satu pun pesan aplikasi. `internal/config`
+  sudah mengikuti `PORT` dan dijaga `internal/config/config_test.go`.
+
+- `vercel.json` TIDAK memuat blok `functions`; pola itu pernah membuat build Go
+  di Vercel gagal.
+
+- **WebSocket tidak ada di backend.** Realtime dipegang Supabase Realtime
+  (kanal privat `fmn:ops` dan `fmn:finance`). Lihat
+  `docs/arch/ADR-001-serverless-realtime.md`.
 
 ---
 
