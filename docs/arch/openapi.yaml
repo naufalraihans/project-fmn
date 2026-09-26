@@ -1,0 +1,1626 @@
+openapi: 3.1.0
+info:
+  title: FMN API
+  version: 1.0.0
+  description: |
+    Kontrak API backend Go untuk web FMN (Focus Management Nusantara).
+    Dua kelompok rute:
+    - /api/public/*  : tanpa autentikasi (company profile + form inquiry)
+    - /api/*         : wajib Bearer JWT + RBAC (lihat docs/arch/rbac.md)
+    Uang selalu integer rupiah (BIGINT). Waktu selalu ISO-8601 dengan zona +07:00,
+    ditentukan server. Semua respons mutasi dibungkus { "data": ... }.
+
+servers:
+  - url: https://api.fmn.example
+    description: Produksi (domain final menyusul)
+  - url: http://localhost:8080
+    description: Lokal
+
+tags:
+  - name: Public
+    description: Tanpa login, dipakai halaman compro
+  - name: Auth
+  - name: Accounts
+  - name: Attendance
+  - name: Catalog
+  - name: Assets
+  - name: Invoices
+  - name: Finance
+  - name: Content
+  - name: Inquiry
+
+paths:
+  # ============================================================ PUBLIC
+  /api/public/content:
+    get:
+      tags: [Public]
+      summary: Konten compro siap tayang
+      description: Mengembalikan semua konten halaman publik yang berstatus terbit, dalam satu panggilan.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      hero: { $ref: '#/components/schemas/ContentBlock' }
+                      about: { $ref: '#/components/schemas/ContentBlock' }
+                      contact: { $ref: '#/components/schemas/ContentBlock' }
+                      services:
+                        type: array
+                        items: { $ref: '#/components/schemas/ServiceItem' }
+                      equipment:
+                        type: array
+                        items: { $ref: '#/components/schemas/PublicEquipmentItem' }
+  /api/public/portfolio:
+    get:
+      tags: [Public]
+      summary: Daftar event/portofolio publik
+      security: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 12 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PortfolioItem' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+  /api/public/inquiries:
+    post:
+      tags: [Public]
+      summary: Kirim permintaan dari form kontak
+      description: |
+        Menyimpan inquiry, memicu peristiwa realtime inquiry.created ke dashboard admin.
+        Rate limit lebih ketat: maksimal 5 kiriman per IP per 10 menit (AC-COM-05).
+        Field honeypot `website` harus kosong; bila terisi, kembalikan 202 tanpa menyimpan.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InquiryCreate' }
+      responses:
+        "201":
+          description: Tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      received_at: { type: string, format: date-time }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+
+  # ============================================================ AUTH
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (tanpa registrasi publik)
+      description: |
+        Respons generik, tidak membedakan email tidak ada vs password salah (AC-AUTH-03).
+        Rate limit: 5 percobaan gagal per IP per 5 menit (AC-AUTH-04).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: { type: string, description: Email atau username }
+                password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthSession' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "429": { $ref: '#/components/responses/TooManyRequests' }
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Tukar refresh token dengan access token baru
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AuthSession' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Akhiri sesi (revoke refresh token)
+      responses:
+        "204": { description: Tanpa isi }
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil pengguna aktif
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/User' }
+  /api/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Ganti password (wajib saat login pertama)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: '#/components/responses/BadRequest' }
+
+  # ============================================================ ACCOUNTS
+  /api/accounts:
+    get:
+      tags: [Accounts]
+      summary: Daftar akun
+      description: Superadmin melihat semua; admin hanya melihat akun user.
+      parameters:
+        - name: role
+          in: query
+          schema: { type: string, enum: [superadmin, admin, user] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [aktif, nonaktif] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Accounts]
+      summary: Buat akun (tanpa registrasi publik)
+      description: |
+        Superadmin boleh membuat admin atau user. Admin hanya boleh membuat user (AC-AUTH-08).
+        Password awal digenerate server, dikembalikan SEKALI pada respons ini, wajib diganti
+        saat login pertama (must_change_password = true).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nama, email, role]
+              properties:
+                nama: { type: string, minLength: 2 }
+                email: { type: string, format: email }
+                username: { type: string }
+                role: { type: string, enum: [admin, user] }
+                telepon: { type: string }
+      responses:
+        "201":
+          description: Akun dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/User'
+                      - type: object
+                        properties:
+                          initial_password:
+                            type: string
+                            description: Ditampilkan sekali, tidak pernah dikembalikan lagi.
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/accounts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Accounts]
+      summary: Detail akun
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/User' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Accounts]
+      summary: Ubah data akun (nama, telepon, peran terbatas)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nama: { type: string }
+                telepon: { type: string }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/accounts/{id}/aktif:
+    post:
+      tags: [Accounts]
+      summary: Aktifkan kembali akun nonaktif
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/accounts/{id}/nonaktif:
+    post:
+      tags: [Accounts]
+      summary: Nonaktifkan akun (tidak dihapus permanen)
+      description: Sesi aktif akun langsung diputus (AC-AUTH-07).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/accounts/{id}/reset-password:
+    post:
+      tags: [Accounts]
+      summary: Reset password oleh yang berwenang
+      description: Superadmin untuk admin/user; admin hanya untuk user. Menulis audit (AC-AUTH-09).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Password baru dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      initial_password: { type: string }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ ATTENDANCE
+  /api/attendance/check-in:
+    post:
+      tags: [Attendance]
+      summary: Absen masuk (kru)
+      description: |
+        Waktu diambil dari server, bukan payload (AC-ABS-01/02).
+        Satu pasang per user per hari; absen masuk kedua ditolak (AC-ABS-03).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                catatan: { type: string, maxLength: 200 }
+      responses:
+        "201":
+          description: Tercatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Attendance' }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/attendance/check-out:
+    post:
+      tags: [Attendance]
+      summary: Absen pulang (kru)
+      description: Ditolak bila belum absen masuk hari ini (AC-ABS-04).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                catatan: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Tercatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Attendance' }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/attendance/me:
+    get:
+      tags: [Attendance]
+      summary: Riwayat absen diri sendiri
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Attendance' }
+  /api/attendance:
+    get:
+      tags: [Attendance]
+      summary: Rekap absen (admin/superadmin)
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: status
+          in: query
+          schema: { type: string, enum: [hadir, tidak_lengkap, alpha] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AttendanceRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/attendance/export:
+    get:
+      tags: [Attendance]
+      summary: Ekspor rekap absen CSV
+      description: Kolom sama dengan tampilan rekap; jumlah baris identik (AC-ABS-07).
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: File CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/attendance/{id}:
+    patch:
+      tags: [Attendance]
+      summary: Koreksi absen manual + alasan wajib
+      description: Menulis audit berisi nilai lama, nilai baru, pelaku, alasan (AC-ABS-08/09).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                check_in_at: { type: string, format: date-time }
+                check_out_at: { type: string, format: date-time }
+                reason: { type: string, minLength: 5 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Attendance' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ CATALOG
+  /api/catalog/items:
+    get:
+      tags: [Catalog]
+      summary: Daftar item katalog
+      description: Kolom harga satuan hanya dikembalikan untuk superadmin (AC-KAT-03).
+      parameters:
+        - name: kategori
+          in: query
+          schema: { type: string, enum: [rigging_stage, sound, lighting, led_screen, genset, lain_lain] }
+        - name: aktif
+          in: query
+          schema: { type: boolean }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CatalogItem' }
+    post:
+      tags: [Catalog]
+      summary: Tambah item katalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogItemInput' }
+      responses:
+        "201":
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CatalogItem' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/catalog/items/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Catalog]
+      summary: Ubah item katalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogItemInput' }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Catalog]
+      summary: Hapus item katalog
+      description: Ditolak bila item pernah dipakai di invoice; tawarkan nonaktifkan (AC-KAT-04).
+      responses:
+        "204": { description: Terhapus }
+        "409": { $ref: '#/components/responses/Conflict' }
+
+  # ============================================================ ASSETS
+  /api/assets:
+    get:
+      tags: [Assets]
+      summary: Daftar aset peralatan
+      description: Kru hanya melihat aset yang ditugaskan (AC-ASET-08); admin/superadmin melihat semua.
+      parameters:
+        - name: kategori
+          in: query
+          schema: { type: string }
+        - name: kondisi
+          in: query
+          schema: { type: string, enum: [baik, rusak_ringan, rusak_berat, perawatan] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [tersedia, dipakai, perawatan] }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Asset' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [Assets]
+      summary: Tambah aset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetInput' }
+      responses:
+        "201":
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Asset' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/assets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Assets]
+      summary: Detail aset + riwayat lengkap
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Asset'
+                      - type: object
+                        properties:
+                          riwayat:
+                            type: array
+                            items: { $ref: '#/components/schemas/AssetUsage' }
+                          perawatan:
+                            type: array
+                            items: { $ref: '#/components/schemas/AssetMaintenance' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Assets]
+      summary: Ubah aset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetInput' }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/assets/{id}/dispatch:
+    post:
+      tags: [Assets]
+      summary: Catat aset keluar untuk event
+      description: |
+        Status unit berubah dipakai, jumlah tersedia berkurang. Ditolak bila qty melebihi
+        stok tersedia (AC-ASET-03). Validasi di dalam transaksi DB (row lock).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetDispatchInput' }
+      responses:
+        "201":
+          description: Tercatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AssetUsage' }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/assets/usages/{id}/return:
+    post:
+      tags: [Assets]
+      summary: Catat aset kembali dari event
+      description: Status kembali tersedia, atau perawatan bila kondisi rusak (AC-ASET-02).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kondisi_kembali]
+              properties:
+                kondisi_kembali: { type: string, enum: [baik, rusak_ringan, rusak_berat] }
+                catatan: { type: string, maxLength: 300 }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/assets/{id}/maintenance:
+    post:
+      tags: [Assets]
+      summary: Catat perawatan aset
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deskripsi]
+              properties:
+                deskripsi: { type: string }
+                biaya: { type: integer, description: Rupiah, opsional }
+      responses:
+        "201": { description: Tercatat }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ EVENTS (untuk kaitan aset & invoice)
+  /api/events:
+    get:
+      tags: [Assets]
+      summary: Daftar event internal (dipakai relasi aset & invoice)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+    post:
+      tags: [Assets]
+      summary: Tambah event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        "201": { description: Dibuat }
+
+  # ============================================================ INVOICES
+  /api/invoices:
+    get:
+      tags: [Invoices]
+      summary: Daftar invoice (superadmin saja)
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, terkirim, dibayar, batal] }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Invoice' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Invoices]
+      summary: Buat invoice (superadmin saja)
+      description: Nomor digenerate server dari sequence periode; total dihitung server (AC-INV-02/03).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceInput' }
+      responses:
+        "201":
+          description: Dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Invoice' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/invoices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Invoices]
+      summary: Detail invoice
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Invoice' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Invoices]
+      summary: Ubah invoice (hanya saat draft)
+      description: Ditolak bila status bukan draft (AC-INV-05).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceInput' }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: '#/components/responses/Conflict' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/invoices/{id}/issue:
+    post:
+      tags: [Invoices]
+      summary: Terbitkan invoice (draft -> terkirim)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/invoices/{id}/pay:
+    post:
+      tags: [Invoices]
+      summary: Tandai dibayar (terkirim -> dibayar)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paid_at, method]
+              properties:
+                paid_at: { type: string, format: date-time }
+                method: { type: string, enum: [transfer, tunai, lainnya] }
+                catatan: { type: string }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/invoices/{id}/cancel:
+    post:
+      tags: [Invoices]
+      summary: Batalkan invoice + alasan wajib
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5 }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: '#/components/responses/Conflict' }
+  /api/invoices/{id}/pdf:
+    get:
+      tags: [Invoices]
+      summary: Unduh PDF invoice
+      description: Isi PDF identik dengan data di layar (AC-INV-06).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: File PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ FINANCE
+  /api/finance/summary:
+    get:
+      tags: [Finance]
+      summary: Ringkasan keuangan (superadmin saja)
+      description: |
+        Semua angka turunan dari invoice, tidak ada input manual (AC-KEU-01/02).
+        Pendapatan = SUM(total) invoice dibayar pada periode; piutang = SUM(total) invoice
+        terkirim yang belum dibayar; piutang_jatuh_tempo dipisah.
+      parameters:
+        - name: periode
+          in: query
+          schema: { type: string, description: "YYYY-MM atau YYYY" }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FinanceSummary' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/finance/transactions:
+    get:
+      tags: [Finance]
+      summary: Daftar transaksi turunan invoice
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TransactionRow' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/finance/export:
+    get:
+      tags: [Finance]
+      summary: Ekspor CSV keuangan
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: File CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ CONTENT (internal)
+  /api/content:
+    get:
+      tags: [Content]
+      summary: Konten compro (termasuk yang belum terbit)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ContentBlock' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/content/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { type: string, description: "hero | about | contact | layanan | dst." }
+    put:
+      tags: [Content]
+      summary: Ubah blok konten (tayang tanpa deploy, AC-COM-06)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isi]
+              properties:
+                isi: { type: object, additionalProperties: true }
+                published: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ INQUIRY (internal)
+  /api/inquiries:
+    get:
+      tags: [Inquiry]
+      summary: Daftar inquiry masuk
+      parameters:
+        - name: handled
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Inquiry' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+  /api/inquiries/{id}/handled:
+    post:
+      tags: [Inquiry]
+      summary: Tandai inquiry sudah ditangani
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ UPLOAD
+  /api/uploads:
+    post:
+      tags: [Uploads]
+      summary: Unggah foto (dipakai katalog, aset, portofolio)
+      description: |
+        Menutup celah audit: skema punya kolom foto_path pada assets, catalog_items,
+        dan portfolio_items, tetapi sebelumnya tidak ada endpoint unggah.
+        Berkas dikompresi + di-resize server (maks 1600px sisi terpanjang, target < 500 KB)
+        lalu disimpan di Supabase Storage; DB menyimpan path, bukan URL penuh.
+        JPEG/PNG/WebP saja. SVG ditolak (risiko XSS).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, tujuan]
+              properties:
+                file: { type: string, format: binary }
+                tujuan: { type: string, enum: [catalog, asset, portfolio] }
+      responses:
+        "201":
+          description: Tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      path: { type: string, description: Path di storage, disimpan ke kolom foto_path }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ AUDIT
+  /api/audit:
+    get:
+      tags: [Audit]
+      summary: Baca log audit (superadmin saja)
+      description: |
+        Diperlukan karena dokumen RBAC menyatakan sel "Audit: baca" boleh untuk superadmin,
+        tetapi sebelumnya tidak ada endpoint-nya. Bersifat baca saja: tidak ada
+        POST/PATCH/DELETE pada log audit dari sisi aplikasi (append-only).
+      parameters:
+        - name: entitas
+          in: query
+          schema: { type: string, enum: [attendance, invoice, asset, account, content] }
+        - name: entitas_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: actor_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ PENUGASAN ASET (dasar izin K4)
+  /api/assets/{id}/assignments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Assets]
+      summary: Tugaskan aset kepada kru
+      description: |
+        Diperlukan karena aturan K4 (kru hanya melihat aset yang ditugaskan) bergantung
+        pada tabel asset_assignments, tetapi sebelumnya tidak ada endpoint untuk mengisinya.
+        Tanpa endpoint ini, akun kru selalu melihat daftar kosong.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_ids, usage_id]
+              properties:
+                usage_id: { type: string, format: uuid, description: Transaksi pemakaian yang mendasari penugasan }
+                user_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        "201": { description: Ditugaskan }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Assets]
+      summary: Batalkan penugasan aset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_ids]
+              properties:
+                user_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        "204": { description: Dibatalkan }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  # ============================================================ HEALTH
+  /api/healthz:
+    get:
+      tags: [Public]
+      summary: Pemeriksaan kesehatan layanan
+      description: |
+        Diperlukan agar halaman compro tetap bisa tayang walau backend internal bermasalah
+        (target non-fungsional: halaman publik tetap hidup). Dipakai health check + deploy.
+      security: []
+      responses:
+        "200":
+          description: Sehat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, enum: [ok, degraded] }
+                      db: { type: string, enum: [ok, down] }
+                      version: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Permintaan tidak valid
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Tidak terautentikasi (token tidak ada/kadaluarsa)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Tidak berwenang untuk peran ini
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Data tidak ditemukan
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Melanggar aturan bisnis (mis. invoice bukan draft, stok tidak cukup)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Melebihi batas laju
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Kode mesin, mis. UNAUTHORIZED, STOK_TIDAK_CUKUP, INVOICE_BUKAN_DRAFT
+            message:
+              type: string
+              description: Pesan Bahasa Indonesia untuk ditampilkan
+            details:
+              type: object
+              additionalProperties: true
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+
+    AuditEntry:
+      type: object
+      description: Baris log audit. Bersifat append-only; hanya bisa dibaca lewat API.
+      properties:
+        id: { type: integer, format: int64 }
+        actor_id: { type: string, format: uuid, nullable: true }
+        actor_nama: { type: string, nullable: true }
+        actor_role: { type: string, enum: [superadmin, admin, user], nullable: true }
+        aksi: { type: string, description: "mis. attendance.correct, invoice.pay" }
+        entitas: { type: string }
+        entitas_id: { type: string, format: uuid, nullable: true }
+        nilai_lama: { type: object, additionalProperties: true, nullable: true }
+        nilai_baru: { type: object, additionalProperties: true, nullable: true }
+        alasan: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    AuthSession:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer, description: Detik }
+        user: { $ref: '#/components/schemas/User' }
+        must_change_password: { type: boolean }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nama: { type: string }
+        email: { type: string, format: email }
+        username: { type: string, nullable: true }
+        telepon: { type: string, nullable: true }
+        role: { type: string, enum: [superadmin, admin, user] }
+        status: { type: string, enum: [aktif, nonaktif] }
+        must_change_password: { type: boolean }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid, nullable: true }
+
+    Attendance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        user_nama: { type: string }
+        tanggal: { type: string, format: date }
+        hari: { type: string, description: Nama hari bahasa Indonesia, dihitung server }
+        check_in_at: { type: string, format: date-time, nullable: true }
+        check_out_at: { type: string, format: date-time, nullable: true }
+        durasi_menit: { type: integer, nullable: true }
+        status: { type: string, enum: [hadir, tidak_lengkap, alpha] }
+        dikoreksi: { type: boolean }
+        catatan: { type: string, nullable: true }
+
+    AttendanceRow:
+      allOf:
+        - $ref: '#/components/schemas/Attendance'
+        - type: object
+          properties:
+            koreksi_terakhir:
+              type: object
+              nullable: true
+              properties:
+                oleh: { type: string }
+                pada: { type: string, format: date-time }
+                alasan: { type: string }
+
+    ContentBlock:
+      type: object
+      properties:
+        key: { type: string }
+        isi: { type: object, additionalProperties: true }
+        published: { type: boolean }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, format: uuid }
+
+    ServiceItem:
+      type: object
+      properties:
+        kode: { type: string }
+        nama: { type: string }
+        deskripsi: { type: string }
+        cakupan: { type: array, items: { type: string } }
+        urutan: { type: integer }
+
+    PublicEquipmentItem:
+      type: object
+      description: Item kategori peralatan untuk halaman publik, TANPA harga
+      properties:
+        kategori: { type: string }
+        nama: { type: string }
+        keterangan: { type: string }
+
+    PortfolioItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nama_event: { type: string }
+        lokasi: { type: string }
+        tahun: { type: integer }
+        peran: { type: string, description: Peran FMN pada event tersebut }
+        deskripsi: { type: string }
+        foto_url: { type: string, nullable: true }
+
+    InquiryCreate:
+      type: object
+      required: [nama, kontak, pesan]
+      properties:
+        nama: { type: string, minLength: 2, maxLength: 120 }
+        kontak: { type: string, minLength: 6, maxLength: 160 }
+        jenis_kebutuhan: { type: string }
+        pesan: { type: string, minLength: 10, maxLength: 2000 }
+        website: { type: string, description: Honeypot, harus kosong }
+
+    Inquiry:
+      allOf:
+        - $ref: '#/components/schemas/InquiryCreate'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            received_at: { type: string, format: date-time }
+            handled: { type: boolean }
+            handled_by: { type: string, format: uuid, nullable: true }
+            handled_at: { type: string, format: date-time, nullable: true }
+
+    CatalogItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kode: { type: string }
+        nama: { type: string }
+        kategori: { type: string, enum: [rigging_stage, sound, lighting, led_screen, genset, lain_lain] }
+        deskripsi: { type: string }
+        satuan: { type: string, description: unit | hari | set }
+        harga_satuan: { type: integer, nullable: true, description: Rupiah. Hanya untuk superadmin }
+        tampil_publik: { type: boolean }
+        aktif: { type: boolean }
+        foto_url: { type: string, nullable: true }
+
+    CatalogItemInput:
+      type: object
+      required: [nama, kategori, satuan]
+      properties:
+        kode: { type: string }
+        nama: { type: string }
+        kategori: { type: string, enum: [rigging_stage, sound, lighting, led_screen, genset, lain_lain] }
+        deskripsi: { type: string }
+        satuan: { type: string }
+        harga_satuan: { type: integer }
+        tampil_publik: { type: boolean }
+        aktif: { type: boolean }
+
+    Asset:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kode_aset: { type: string }
+        nama: { type: string }
+        kategori: { type: string }
+        jumlah_total: { type: integer }
+        jumlah_tersedia: { type: integer }
+        lokasi: { type: string }
+        kondisi: { type: string, enum: [baik, rusak_ringan, rusak_berat, perawatan] }
+        status: { type: string, enum: [tersedia, dipakai, perawatan] }
+        nilai_perolehan: { type: integer, nullable: true, description: Rupiah, untuk neraca }
+        tanggal_pengadaan: { type: string, format: date, nullable: true }
+        foto_url: { type: string, nullable: true }
+        catatan: { type: string, nullable: true }
+
+    AssetInput:
+      type: object
+      required: [nama, kategori, jumlah_total, lokasi, kondisi]
+      properties:
+        kode_aset: { type: string }
+        nama: { type: string }
+        kategori: { type: string }
+        jumlah_total: { type: integer, minimum: 1 }
+        lokasi: { type: string }
+        kondisi: { type: string, enum: [baik, rusak_ringan, rusak_berat, perawatan] }
+        nilai_perolehan: { type: integer }
+        tanggal_pengadaan: { type: string, format: date }
+        catatan: { type: string }
+
+    AssetDispatchInput:
+      type: object
+      required: [event_id, qty, penanggung_jawab, tanggal_keluar]
+      properties:
+        event_id: { type: string, format: uuid }
+        qty: { type: integer, minimum: 1 }
+        penanggung_jawab: { type: string }
+        tanggal_keluar: { type: string, format: date-time }
+
+    AssetUsage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        asset_id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        event_nama: { type: string }
+        qty: { type: integer }
+        penanggung_jawab: { type: string }
+        tanggal_keluar: { type: string, format: date-time }
+        tanggal_kembali: { type: string, format: date-time, nullable: true }
+        kondisi_kembali: { type: string, nullable: true, enum: [baik, rusak_ringan, rusak_berat] }
+        catatan: { type: string, nullable: true }
+
+    AssetMaintenance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        asset_id: { type: string, format: uuid }
+        deskripsi: { type: string }
+        biaya: { type: integer, nullable: true }
+        mulai: { type: string, format: date-time }
+        selesai: { type: string, format: date-time, nullable: true }
+
+    Event:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nama_event: { type: string }
+        lokasi: { type: string }
+        mulai: { type: string, format: date-time }
+        selesai: { type: string, format: date-time, nullable: true }
+        klien: { type: string, nullable: true }
+
+    EventInput:
+      type: object
+      required: [nama_event, lokasi, mulai]
+      properties:
+        nama_event: { type: string }
+        lokasi: { type: string }
+        mulai: { type: string, format: date-time }
+        selesai: { type: string, format: date-time }
+        klien: { type: string }
+
+    InvoiceInput:
+      type: object
+      required: [klien_nama, tanggal_terbit, baris]
+      properties:
+        klien_nama: { type: string }
+        klien_alamat: { type: string }
+        klien_kontak: { type: string }
+        event_id: { type: string, format: uuid, nullable: true }
+        tanggal_terbit: { type: string, format: date }
+        jatuh_tempo: { type: string, format: date }
+        baris:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [deskripsi, qty, harga_satuan]
+            properties:
+              catalog_item_id: { type: string, format: uuid, nullable: true }
+              deskripsi: { type: string }
+              qty: { type: integer, minimum: 1 }
+              satuan: { type: string }
+              harga_satuan: { type: integer, description: Rupiah }
+        diskon: { type: integer, minimum: 0, default: 0 }
+        ppn_persen: { type: number, default: 0, description: "0 atau 11" }
+        catatan: { type: string }
+
+    Invoice:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nomor: { type: string, description: "INV/YYYY/MM/NNNN" }
+        klien_nama: { type: string }
+        klien_alamat: { type: string, nullable: true }
+        klien_kontak: { type: string, nullable: true }
+        event_id: { type: string, format: uuid, nullable: true }
+        tanggal_terbit: { type: string, format: date }
+        jatuh_tempo: { type: string, format: date, nullable: true }
+        baris:
+          type: array
+          items:
+            type: object
+            properties:
+              deskripsi: { type: string }
+              qty: { type: integer }
+              satuan: { type: string }
+              harga_satuan: { type: integer }
+              jumlah: { type: integer }
+        subtotal: { type: integer }
+        diskon: { type: integer }
+        ppn_persen: { type: number }
+        ppn_nilai: { type: integer }
+        total: { type: integer }
+        status: { type: string, enum: [draft, terkirim, dibayar, batal] }
+        paid_at: { type: string, format: date-time, nullable: true }
+        paid_method: { type: string, nullable: true }
+        cancel_reason: { type: string, nullable: true }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+
+    FinanceSummary:
+      type: object
+      properties:
+        periode_label: { type: string }
+        pendapatan: { type: integer, description: SUM invoice dibayar }
+        piutang_belum_jatuh_tempo: { type: integer }
+        piutang_jatuh_tempo: { type: integer }
+        jumlah_invoice:
+          type: object
+          properties:
+            draft: { type: integer }
+            terkirim: { type: integer }
+            dibayar: { type: integer }
+            batal: { type: integer }
+        nilai_aset: { type: integer, description: Turunan nilai_perolehan aset, untuk neraca }
+        catatan_sumber:
+          type: string
+          description: Keterangan bahwa angka berasal dari invoice, belum termasuk pengeluaran
+
+    TransactionRow:
+      type: object
+      properties:
+        tanggal: { type: string, format: date }
+        jenis: { type: string, enum: [pendapatan, piutang] }
+        nomor_invoice: { type: string }
+        klien_nama: { type: string }
+        jumlah: { type: integer }
+        status_invoice: { type: string }
+
+security:
+  - bearerAuth: []
