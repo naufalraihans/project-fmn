@@ -30,6 +30,10 @@ echo "skema exit=$? error=$(grep -ci error "$TMP/schema.log")"
 "$PSQL" -h localhost -U postgres -d $DB -q -f server/scripts/seed_local.sql >"$TMP/seed.log" 2>&1
 echo "seed exit=$? error=$(grep -ci error "$TMP/seed.log")"
 
+# Matikan sisa proses uji sebelumnya. Tanpa ini, server lama masih memegang port
+# dan server baru gagal bind -> uji memakai server lama yang sudah tidak valid.
+powershell -NoProfile -Command "Get-Process fmn-api,fmn-f1 -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
+
 echo "=== 2. jalankan server ==="
 cd server
 # DSN tanpa password: pgx membaca env PGPASSWORD langsung sehingga password
@@ -50,33 +54,35 @@ BASE=http://localhost:8099
 # ambil field JSON memakai python (jq tidak tersedia)
 J() { python -c "import sys,json;d=json.load(sys.stdin);print(d$1)" 2>/dev/null; }
 
+# login <identifier> -> cetak access_token (kosong bila gagal)
+# Body JSON disusun TERPISAH dari kutipan shell supaya tidak mudah rusak.
+login() {
+  curl -s -X POST "$BASE/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$FMN_SEED_PASSWORD")"     | J "['data']['access_token']"
+}
+login_code() {
+  curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$2")"
+}
+
 echo "=== 3. healthz (publik, tanpa token) ==="
 H=$(curl -s $BASE/api/healthz)
 echo "  respons: $H"
 echo "$H" | grep -q '"status":"ok"' && pass "healthz melaporkan ok" || fail "healthz" "$H"
 
 echo "=== 4. login 3 peran ==="
-SUPER=$(curl -s -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"super@fmn.test","password":"'"$FMN_SEED_PASSWORD"'}' | J "['data']['access_token']")
-ADMIN=$(curl -s -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"admin@fmn.test","password":"'"$FMN_SEED_PASSWORD"'}' | J "['data']['access_token']")
-KRU=$(curl -s -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"kru@fmn.test","password":"'"$FMN_SEED_PASSWORD"'}' | J "['data']['access_token']")
+SUPER=$(login super@fmn.test)
+ADMIN=$(login admin@fmn.test)
+KRU=$(login kru@fmn.test)
 [ -n "$SUPER" ] && pass "login superadmin dapat token" || fail "login superadmin" "kosong"
 [ -n "$ADMIN" ] && pass "login admin dapat token" || fail "login admin" "kosong"
 [ -n "$KRU" ] && pass "login kru dapat token" || fail "login kru" "kosong"
 
 echo "=== 5. login gagal (pesan harus seragam) ==="
-P1=$(curl -s -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"admin@fmn.test","password":"SALAH"}')
-C1=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"admin@fmn.test","password":"SALAH"}')
+P1=$(curl -s -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json'   --data "$(printf '{"identifier":"%s","password":"%s"}' admin@fmn.test SALAH)")
+C1=$(login_code admin@fmn.test SALAH)
 [ "$C1" = "401" ] && pass "password salah -> 401" || fail "password salah" "$C1"
-C2=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"nonaktif@fmn.test","password":"'"$FMN_SEED_PASSWORD"'}')
+C2=$(login_code nonaktif@fmn.test "$FMN_SEED_PASSWORD")
 [ "$C2" = "401" ] && pass "akun nonaktif -> 401" || fail "akun nonaktif" "$C2"
-P3=$(curl -s -X POST $BASE/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"tidak-ada@fmn.test","password":"SALAH"}')
+P3=$(curl -s -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json'   --data "$(printf '{"identifier":"%s","password":"%s"}' tidak-ada@fmn.test SALAH)")
 [ "$P1" = "$P3" ] && pass "pesan akun ada == pesan akun tak ada (tak bocor)" || fail "pesan beda" "$P1 vs $P3"
 
 echo "=== 6. keuangan & audit: 403 untuk admin/kru, lolos untuk superadmin ==="

@@ -51,6 +51,10 @@ export FMN_ADDR=":8098"
 # Batas laju dinaikkan dulu supaya uji validasi tidak keburu terblokir;
 # uji batas laju yang sebenarnya dilakukan di bagian 6 dengan batas kecil.
 export FMN_INQUIRY_RATE_LIMIT=20
+# Matikan sisa proses uji sebelumnya. Tanpa ini, server lama masih memegang port
+# dan server baru gagal bind -> uji memakai server lama yang sudah tidak valid.
+powershell -NoProfile -Command "Get-Process fmn-api,fmn-f1 -ErrorAction SilentlyContinue | Stop-Process -Force" 2>/dev/null || true
+
 go build -o "$TMP/fmn-f1.exe" ./cmd/api 2>&1|head -3
 "$TMP/fmn-f1.exe" >"$TMP/f1api.log" 2>&1 &
 PID=$!
@@ -58,6 +62,9 @@ sleep 3
 kill -0 $PID 2>/dev/null || { echo "SERVER GAGAL"; tail -10 "$TMP/f1api.log"; exit 1; }
 B=http://localhost:8098
 J() { python -c "import sys,json;d=json.load(sys.stdin);print(d$1)" 2>/dev/null; }
+login() {
+  curl -s -X POST "$B/api/auth/login"     -H 'Content-Type: application/json'     --data "$(printf '{"identifier":"%s","password":"%s"}' "$1" "$FMN_SEED_PASSWORD")"     | J "['data']['access_token']"
+}
 
 echo "=== 1. konten publik tanpa token ==="
 C=$(curl -s -o /dev/null -w "%{http_code}" $B/api/public/content)
@@ -119,10 +126,8 @@ echo "   dari 22 kiriman: $TERIMA diterima, $TOLAK ditolak 429"
 [ "$TERIMA" -le 20 ] && pass "diterima tidak melampaui batas ($TERIMA <= 20)" || fail "batas tertembus" "$TERIMA diterima"
 
 echo "=== 7. panel internal butuh peran ==="
-SUPER=$(curl -s -X POST $B/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"super@fmn.test","password":"$FMN_SEED_PASSWORD"}' | J "['data']['access_token']")
-KRU=$(curl -s -X POST $B/api/auth/login -H 'Content-Type: application/json' \
-  -d '{"identifier":"kru@fmn.test","password":"$FMN_SEED_PASSWORD"}' | J "['data']['access_token']")
+SUPER=$(login super@fmn.test)
+KRU=$(login kru@fmn.test)
 C=$(curl -s -o /dev/null -w "%{http_code}" $B/api/content -H "Authorization: Bearer $SUPER")
 [ "$C" = "200" ] && pass "superadmin lihat konten internal -> 200" || fail "content internal" "$C"
 C=$(curl -s $B/api/content -H "Authorization: Bearer $SUPER")
