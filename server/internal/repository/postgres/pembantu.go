@@ -48,6 +48,15 @@ func jsonOrNil(v any) any {
 	}
 }
 
+// nilIfEmpty mengembalikan nil untuk string kosong, supaya kolom enum yang
+// boleh NULL tidak menerima string kosong (bukan nilai enum yang sah).
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // rawJSON mengubah kolom jsonb hasil scan menjadi nilai yang bisa di-encode.
 // Kolom yang NULL dikembalikan sebagai nil, bukan "null" sebagai teks.
 func rawJSON(b []byte) any {

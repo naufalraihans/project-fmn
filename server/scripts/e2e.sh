@@ -97,7 +97,7 @@ for pair in "admin:$ADMIN" "kru:$KRU"; do
   done
 done
 C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/finance/summary -H "Authorization: Bearer $SUPER")
-[ "$C" = "501" ] && pass "superadmin GET finance -> lolos RBAC (501 = belum dibuat)" || fail "superadmin finance" "$C"
+[ "$C" = "200" ] && pass "superadmin GET finance -> 200 (sudah terimplementasi)" || fail "superadmin finance" "$C"
 C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/audit -H "Authorization: Bearer $SUPER")
 [ "$C" = "200" ] && pass "superadmin GET audit -> 200 (sudah dibuat)" || fail "superadmin audit" "$C"
 

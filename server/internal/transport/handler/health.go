@@ -21,6 +21,7 @@ type Handler struct {
 	account    *usecase.AccountUsecase
 	catalog    *usecase.CatalogUsecase
 	asset      *usecase.AssetUsecase
+	invoice    *usecase.InvoiceUsecase
 	profiles   *postgres.ProfileRepo
 }
 
@@ -35,6 +36,7 @@ type Deps struct {
 	InquiryR *postgres.InquiryRepo
 	CatalogR *postgres.CatalogRepo
 	AssetR   *postgres.AssetRepo
+	InvoiceR *postgres.InvoiceRepo
 }
 
 func New(d Deps) *Handler {
@@ -47,6 +49,7 @@ func New(d Deps) *Handler {
 		account:    usecase.NewAccountUsecase(d.Profiles, d.Supabase),
 		catalog:    usecase.NewCatalogUsecase(d.CatalogR),
 		asset:      usecase.NewAssetUsecase(d.AssetR, poolWrap, postgres.NewExecer(d.Pool), d.Notify),
+		invoice:    usecase.NewInvoiceUsecase(d.InvoiceR, poolWrap, d.Notify),
 		profiles:   d.Profiles,
 	}
 }

@@ -44,6 +44,7 @@ func NewRouter(d Deps) http.Handler {
 	inquiry := postgres.NewInquiryRepo(d.Pool)
 	catalog := postgres.NewCatalogRepo(d.Pool)
 	asset := postgres.NewAssetRepo(d.Pool)
+	invoice := postgres.NewInvoiceRepo(d.Pool)
 
 	h := handler.New(handler.Deps{
 		Pool:     d.Pool,
@@ -55,6 +56,7 @@ func NewRouter(d Deps) http.Handler {
 		InquiryR: inquiry,
 		CatalogR: catalog,
 		AssetR:   asset,
+		InvoiceR: invoice,
 	})
 
 	// ---------- rute yang SUDAH terimplementasi ----------
@@ -121,6 +123,19 @@ func NewRouter(d Deps) http.Handler {
 	// Fase 3 - event
 	mux.HandleFunc("GET /api/events", h.EventList)
 	mux.HandleFunc("POST /api/events", h.EventCreate)
+
+	// Fase 4 - invoice (superadmin)
+	mux.HandleFunc("GET /api/invoices", h.InvoiceList)
+	mux.HandleFunc("POST /api/invoices", h.InvoiceCreate)
+	mux.HandleFunc("GET /api/invoices/{id}", h.InvoiceGet)
+	mux.HandleFunc("PATCH /api/invoices/{id}", h.InvoiceUpdate)
+	mux.HandleFunc("POST /api/invoices/{id}/issue", h.InvoiceIssue)
+	mux.HandleFunc("POST /api/invoices/{id}/pay", h.InvoicePay)
+	mux.HandleFunc("POST /api/invoices/{id}/cancel", h.InvoiceCancel)
+
+	// Fase 4 - keuangan / neraca (superadmin)
+	mux.HandleFunc("GET /api/finance/summary", h.FinanceSummary)
+	mux.HandleFunc("GET /api/finance/transactions", h.FinanceTransactions)
 
 	// ---------- rute kontrak yang BELUM dibuat: stub 501 ----------
 	// Didaftarkan supaya otorisasinya tetap teruji (rute tak terdaftar tidak
