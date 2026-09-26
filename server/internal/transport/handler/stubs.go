@@ -24,19 +24,6 @@ func notYet(w http.ResponseWriter, r *http.Request) {
 
 // stubRoutes memetakan pola ServeMux ke handler yang belum dibuat.
 var stubRoutes = map[string]http.HandlerFunc{
-	"GET /api/attendance/me":               notYet,
-	"POST /api/attendance/check-in":        notYet,
-	"POST /api/attendance/check-out":       notYet,
-	"GET /api/attendance":                  notYet,
-	"GET /api/attendance/export":           notYet,
-	"PATCH /api/attendance/{id}":           notYet,
-	"GET /api/accounts":                    notYet,
-	"POST /api/accounts":                   notYet,
-	"GET /api/accounts/{id}":               notYet,
-	"PATCH /api/accounts/{id}":             notYet,
-	"POST /api/accounts/{id}/aktif":        notYet,
-	"POST /api/accounts/{id}/nonaktif":     notYet,
-	"POST /api/accounts/{id}/reset-password": notYet,
 	"GET /api/catalog/items":               notYet,
 	"POST /api/catalog/items":              notYet,
 	"PATCH /api/catalog/items/{id}":        notYet,
@@ -63,7 +50,6 @@ var stubRoutes = map[string]http.HandlerFunc{
 	"GET /api/finance/transactions":        notYet,
 	"GET /api/finance/export":              notYet,
 	"POST /api/uploads":                    notYet,
-	"GET /api/audit":                       notYet,
 }
 
 // RegisterStubs mendaftarkan seluruh rute kontrak yang belum diimplementasikan.

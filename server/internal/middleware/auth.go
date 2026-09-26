@@ -269,11 +269,16 @@ func isWS(r *http.Request) bool {
 
 // ---------- RBAC ----------
 
-// rute yang tetap boleh diakses walau must_change_password = true
+// rute yang tetap boleh diakses walau must_change_password = true.
+//
+// password-changed WAJIB ada di daftar ini. Tanpa itu terjadi jalan buntu:
+// pengguna yang wajib mengganti password tidak dapat memanggil endpoint yang
+// menyatakan passwordnya sudah diganti, sehingga pembatas tidak pernah terbuka
+// dan akunnya tersandera selamanya (AC-AUTH-06).
 var changePwAllowed = map[string]bool{
-	"/api/auth/change-password": true,
-	"/api/auth/me":              true,
-	"/api/auth/logout":          true,
+	"/api/auth/password-changed": true,
+	"/api/auth/me":               true,
+	"/api/auth/logout":           true,
 }
 
 func RBAC(next http.Handler) http.Handler {

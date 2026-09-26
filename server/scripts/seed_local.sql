@@ -14,3 +14,12 @@ VALUES
  ('44444444-4444-4444-4444-444444444444', 'Kru Nonaktif', 'nonaktif@fmn.test', 'nonaktif',
   'user', 'nonaktif', false, '$2a$10$xyVjVTwVgd1My13XYUI14OoiKEa6dGvCR8eaFn4uR20hR93KES47W')
 ON CONFLICT (id) DO NOTHING;
+
+-- Dua akun tambahan untuk pengujian Fase 2 (nonaktifkan akun & ganti password).
+INSERT INTO profiles (id, nama, email, username, role, status, must_change_password, password_hash)
+VALUES
+ ('55555555-5555-5555-5555-555555555555', 'Siti Kru Dua', 'kru2@fmn.test', 'kru2',
+  'user', 'aktif', false, '$2a$10$xyVjVTwVgd1My13XYUI14OoiKEa6dGvCR8eaFn4uR20hR93KES47W'),
+ ('66666666-6666-6666-6666-666666666666', 'Andi Kru Tiga', 'kru3@fmn.test', 'kru3',
+  'user', 'aktif', false, '$2a$10$xyVjVTwVgd1My13XYUI14OoiKEa6dGvCR8eaFn4uR20hR93KES47W')
+ON CONFLICT (id) DO NOTHING;

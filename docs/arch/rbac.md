@@ -70,8 +70,7 @@ POST   /api/auth/login                          (publik)
 POST   /api/auth/refresh                        (publik)
 
 GET    /api/auth/me                             semua peran terautentikasi
-POST   /api/auth/logout                         semua peran terautentikasi
-POST   /api/auth/change-password                semua peran terautentikasi
+POST   /api/auth/password-changed               semua peran terautentikasi
 
 GET    /api/attendance/me                       semua peran terautentikasi
 POST   /api/attendance/check-in                 semua peran terautentikasi

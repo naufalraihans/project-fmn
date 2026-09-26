@@ -30,6 +30,7 @@ var rules = []Rule{
 	{"POST", "/api/auth/change-password", allRoles()},
 
 	// ---------- absensi ----------
+	{"POST", "/api/auth/password-changed", allRoles()},
 	{"GET", "/api/attendance/me", allRoles()},
 	{"POST", "/api/attendance/check-in", allRoles()},
 	{"POST", "/api/attendance/check-out", allRoles()},

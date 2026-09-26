@@ -129,6 +129,28 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/User' }
+  /api/auth/password-changed:
+    post:
+      tags: [Auth]
+      summary: Tandai password sudah diganti (dipanggil frontend setelah Supabase Auth)
+      description: |
+        Frontend mengganti password LANGSUNG ke Supabase Auth, lalu memanggil
+        endpoint ini supaya server membuka pembatas must_change_password.
+        Tanpa langkah ini, pengguna terjebak di halaman ganti password selamanya.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      must_change_password: { type: boolean }
+                      catatan: { type: string }
+
   /api/accounts:
     get:
       tags: [Accounts]

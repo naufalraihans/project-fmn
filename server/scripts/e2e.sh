@@ -22,8 +22,8 @@ FAILED=0
 pass() { echo "  PASS  $1"; }
 fail() { echo "  FAIL  $1 -- dapat '$2'"; FAILED=1; }
 
-if [ -z "${PGPASSWORD:-}" ] || [ -z "${FMN_SEED_PASSWORD:-}" ]; then
-  echo "PGPASSWORD dan FMN_SEED_PASSWORD wajib diset (lihat server/README.md)."
+if [ -z "${PGPASSWORD:-}" ]; then
+  echo "PGPASSWORD wajib diset (lihat server/README.md)."
   exit 2
 fi
 
@@ -98,6 +98,8 @@ for pair in "admin:$ADMIN" "kru:$KRU"; do
 done
 C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/finance/summary -H "Authorization: Bearer $SUPER")
 [ "$C" = "501" ] && pass "superadmin GET finance -> lolos RBAC (501 = belum dibuat)" || fail "superadmin finance" "$C"
+C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/audit -H "Authorization: Bearer $SUPER")
+[ "$C" = "200" ] && pass "superadmin GET audit -> 200 (sudah dibuat)" || fail "superadmin audit" "$C"
 
 echo "=== 7. kru diblokir dari area admin (AC-RBAC-01) ==="
 for ep in /api/accounts /api/attendance /api/catalog/items /api/inquiries; do
@@ -108,10 +110,13 @@ C=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/api/assets -H "Authoriz
 [ "$C" = "403" ] && pass "kru POST /api/assets -> 403" || fail "kru POST assets" "$C"
 
 echo "=== 8. admin mewarisi rute operasional ==="
-for ep in /api/attendance /api/accounts /api/catalog/items; do
-  C=$(curl -s -o /dev/null -w "%{http_code}" $BASE$ep -H "Authorization: Bearer $ADMIN")
-  [ "$C" = "501" ] && pass "admin GET $ep -> lolos RBAC (501)" || fail "admin GET $ep" "$C"
-done
+# Fase 2 sudah jadi: rute absensi & akun memberi 200, bukan 501 lagi.
+C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/attendance?from=$(date +%Y-%m-%d)" -H "Authorization: Bearer $ADMIN")
+[ "$C" = "200" ] && pass "admin GET /api/attendance -> 200" || fail "admin attendance" "$C"
+C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/accounts" -H "Authorization: Bearer $ADMIN")
+[ "$C" = "200" ] && pass "admin GET /api/accounts -> 200" || fail "admin accounts" "$C"
+C=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/catalog/items" -H "Authorization: Bearer $ADMIN")
+[ "$C" = "501" ] && pass "admin GET /api/catalog/items -> lolos RBAC (501, belum dibuat)" || fail "admin catalog" "$C"
 
 echo "=== 9. tanpa token / token ngawur ==="
 C=$(curl -s -o /dev/null -w "%{http_code}" $BASE/api/finance/summary)

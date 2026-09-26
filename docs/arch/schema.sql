@@ -10,19 +10,41 @@
 -- ============================================================================
 
 -- ---------------------------------------------------------------- ENUM
-CREATE TYPE role_type      AS ENUM ('superadmin', 'admin', 'user');
-CREATE TYPE user_status    AS ENUM ('aktif', 'nonaktif');
-CREATE TYPE attendance_status AS ENUM ('hadir', 'tidak_lengkap', 'alpha');
-CREATE TYPE kondisi_type   AS ENUM ('baik', 'rusak_ringan', 'rusak_berat', 'perawatan');
-CREATE TYPE asset_status   AS ENUM ('tersedia', 'dipakai', 'perawatan');
-CREATE TYPE invoice_status AS ENUM ('draft', 'terkirim', 'dibayar', 'batal');
-CREATE TYPE kategori_type  AS ENUM ('rigging_stage', 'sound', 'lighting', 'led_screen', 'genset', 'lain_lain');
-CREATE TYPE paid_method    AS ENUM ('transfer', 'tunai', 'lainnya');
+-- Pembuatan tipe dibungkus pemeriksaan agar berkas ini dapat dijalankan ulang
+-- (mis. saat memperbarui view atau fungsi) tanpa gagal di langkah pertama.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'role_type') THEN
+    CREATE TYPE role_type AS ENUM ('superadmin', 'admin', 'user');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status') THEN
+    CREATE TYPE user_status AS ENUM ('aktif', 'nonaktif');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_status') THEN
+    CREATE TYPE attendance_status AS ENUM ('hadir', 'tidak_lengkap', 'alpha');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kondisi_type') THEN
+    CREATE TYPE kondisi_type AS ENUM ('baik', 'rusak_ringan', 'rusak_berat', 'perawatan');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'asset_status') THEN
+    CREATE TYPE asset_status AS ENUM ('tersedia', 'dipakai', 'perawatan');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'invoice_status') THEN
+    CREATE TYPE invoice_status AS ENUM ('draft', 'terkirim', 'dibayar', 'batal');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kategori_type') THEN
+    CREATE TYPE kategori_type AS ENUM ('rigging_stage', 'sound', 'lighting', 'led_screen', 'genset', 'lain_lain');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'paid_method') THEN
+    CREATE TYPE paid_method AS ENUM ('transfer', 'tunai', 'lainnya');
+  END IF;
+END;
+$$;
 
 -- ---------------------------------------------------------------- AKUN
 -- Catatan: Supabase Auth memegang kredensial (auth.users).
 -- Tabel ini memegang profil + peran, direferensikan oleh auth.uid().
-CREATE TABLE profiles (
+CREATE TABLE IF NOT EXISTS profiles (
   id                   UUID PRIMARY KEY,          -- = auth.users.id
   nama                 VARCHAR(120) NOT NULL,
   email                VARCHAR(160) NOT NULL UNIQUE,
@@ -40,11 +62,11 @@ CREATE TABLE profiles (
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT profiles_email_lower CHECK (email = lower(email))
 );
-CREATE INDEX idx_profiles_role   ON profiles(role);
-CREATE INDEX idx_profiles_status ON profiles(status);
+CREATE INDEX IF NOT EXISTS idx_profiles_role   ON profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
 
 -- Sesi refresh token (kalau backend memakai token sendiri, bukan Supabase Auth)
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   token_hash  VARCHAR(128) NOT NULL UNIQUE,
@@ -52,10 +74,10 @@ CREATE TABLE refresh_tokens (
   expires_at  TIMESTAMPTZ NOT NULL,
   revoked_at  TIMESTAMPTZ
 );
-CREATE INDEX idx_refresh_user ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
 
 -- ---------------------------------------------------------------- ABSENSI
-CREATE TABLE attendance (
+CREATE TABLE IF NOT EXISTS attendance (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       UUID NOT NULL REFERENCES profiles(id),
   tanggal       DATE NOT NULL,
@@ -76,11 +98,11 @@ CREATE TABLE attendance (
   CONSTRAINT attendance_urut_waktu CHECK (check_out_at IS NULL OR check_in_at IS NULL
                                           OR check_out_at > check_in_at)
 );
-CREATE INDEX idx_attendance_tanggal ON attendance(tanggal);
-CREATE INDEX idx_attendance_user    ON attendance(user_id, tanggal DESC);
+CREATE INDEX IF NOT EXISTS idx_attendance_tanggal ON attendance(tanggal);
+CREATE INDEX IF NOT EXISTS idx_attendance_user    ON attendance(user_id, tanggal DESC);
 
 -- ---------------------------------------------------------------- EVENT
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nama_event  VARCHAR(180) NOT NULL,
   lokasi      VARCHAR(180) NOT NULL,
@@ -90,10 +112,10 @@ CREATE TABLE events (
   deskripsi   TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_events_mulai ON events(mulai DESC);
+CREATE INDEX IF NOT EXISTS idx_events_mulai ON events(mulai DESC);
 
 -- ---------------------------------------------------------------- KATALOG
-CREATE TABLE catalog_items (
+CREATE TABLE IF NOT EXISTS catalog_items (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kode          VARCHAR(40) UNIQUE,
   nama          VARCHAR(160) NOT NULL,
@@ -107,10 +129,10 @@ CREATE TABLE catalog_items (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_catalog_aktif ON catalog_items(aktif, kategori);
+CREATE INDEX IF NOT EXISTS idx_catalog_aktif ON catalog_items(aktif, kategori);
 
 -- ---------------------------------------------------------------- ASET
-CREATE TABLE assets (
+CREATE TABLE IF NOT EXISTS assets (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kode_aset        VARCHAR(40) UNIQUE,
   nama             VARCHAR(160) NOT NULL,
@@ -129,9 +151,9 @@ CREATE TABLE assets (
   -- jumlah tersedia tidak boleh melebihi total (AC-ASET-03)
   CONSTRAINT assets_tersedia_valid CHECK (jumlah_tersedia <= jumlah_total)
 );
-CREATE INDEX idx_assets_kategori ON assets(kategori, kondisi, status);
+CREATE INDEX IF NOT EXISTS idx_assets_kategori ON assets(kategori, kondisi, status);
 
-CREATE TABLE asset_usages (
+CREATE TABLE IF NOT EXISTS asset_usages (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   asset_id         UUID NOT NULL REFERENCES assets(id),
   event_id         UUID NOT NULL REFERENCES events(id),
@@ -147,12 +169,12 @@ CREATE TABLE asset_usages (
   -- bila kembali, kondisi wajib diisi (AC-ASET-02)
   CONSTRAINT usage_kondisi_wajib CHECK (tanggal_kembali IS NULL OR kondisi_kembali IS NOT NULL)
 );
-CREATE INDEX idx_usages_asset ON asset_usages(asset_id, tanggal_keluar DESC);
-CREATE INDEX idx_usages_event ON asset_usages(event_id);
+CREATE INDEX IF NOT EXISTS idx_usages_asset ON asset_usages(asset_id, tanggal_keluar DESC);
+CREATE INDEX IF NOT EXISTS idx_usages_event ON asset_usages(event_id);
 -- mendeteksi transaksi menggantung (AC/M9: aset keluar belum kembali)
-CREATE INDEX idx_usages_outstanding ON asset_usages(asset_id) WHERE tanggal_kembali IS NULL;
+CREATE INDEX IF NOT EXISTS idx_usages_outstanding ON asset_usages(asset_id) WHERE tanggal_kembali IS NULL;
 
-CREATE TABLE asset_maintenances (
+CREATE TABLE IF NOT EXISTS asset_maintenances (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   asset_id   UUID NOT NULL REFERENCES assets(id),
   deskripsi  TEXT NOT NULL,
@@ -162,10 +184,10 @@ CREATE TABLE asset_maintenances (
   created_by UUID NOT NULL REFERENCES profiles(id),
   CONSTRAINT maint_selesai_valid CHECK (selesai IS NULL OR selesai >= mulai)
 );
-CREATE INDEX idx_maint_asset ON asset_maintenances(asset_id, mulai DESC);
+CREATE INDEX IF NOT EXISTS idx_maint_asset ON asset_maintenances(asset_id, mulai DESC);
 
 -- Penugasan aset ke kru (untuk AC-ASET-08: kru hanya melihat yang ditugaskan)
-CREATE TABLE asset_assignments (
+CREATE TABLE IF NOT EXISTS asset_assignments (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usage_id    UUID NOT NULL REFERENCES asset_usages(id) ON DELETE CASCADE,
   user_id     UUID NOT NULL REFERENCES profiles(id),
@@ -175,12 +197,12 @@ CREATE TABLE asset_assignments (
 
 -- ---------------------------------------------------------------- INVOICE
 -- Sequence per periode: aman dari balapan dua permintaan bersamaan (AC-INV-02)
-CREATE TABLE invoice_sequences (
+CREATE TABLE IF NOT EXISTS invoice_sequences (
   periode   CHAR(7) PRIMARY KEY,                -- 'YYYY-MM'
   last_seq  INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE invoices (
+CREATE TABLE IF NOT EXISTS invoices (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nomor         VARCHAR(30) NOT NULL UNIQUE,    -- INV/YYYY/MM/NNNN
   periode       CHAR(7) NOT NULL,
@@ -210,11 +232,11 @@ CREATE TABLE invoices (
   ),
   CONSTRAINT invoice_batal_alasan CHECK (status <> 'batal' OR cancel_reason IS NOT NULL)
 );
-CREATE INDEX idx_invoices_status  ON invoices(status, tanggal_terbit DESC);
-CREATE INDEX idx_invoices_periode ON invoices(periode);
-CREATE INDEX idx_invoices_client  ON invoices(klien_nama);
+CREATE INDEX IF NOT EXISTS idx_invoices_status  ON invoices(status, tanggal_terbit DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_periode ON invoices(periode);
+CREATE INDEX IF NOT EXISTS idx_invoices_client  ON invoices(klien_nama);
 
-CREATE TABLE invoice_lines (
+CREATE TABLE IF NOT EXISTS invoice_lines (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   invoice_id       UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
   urutan           INTEGER NOT NULL,
@@ -226,10 +248,10 @@ CREATE TABLE invoice_lines (
   jumlah           BIGINT NOT NULL CHECK (jumlah >= 0),   -- qty * harga_satuan (server)
   UNIQUE (invoice_id, urutan)
 );
-CREATE INDEX idx_lines_invoice ON invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_lines_invoice ON invoice_lines(invoice_id);
 
 -- ---------------------------------------------------------------- KONTEN COMPRO
-CREATE TABLE content_blocks (
+CREATE TABLE IF NOT EXISTS content_blocks (
   key         VARCHAR(60) PRIMARY KEY,          -- hero | about | contact | ...
   isi         JSONB NOT NULL DEFAULT '{}'::jsonb,
   published   BOOLEAN NOT NULL DEFAULT FALSE,
@@ -237,7 +259,7 @@ CREATE TABLE content_blocks (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE services (
+CREATE TABLE IF NOT EXISTS services (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   kode       VARCHAR(40) UNIQUE,
   nama       VARCHAR(140) NOT NULL,
@@ -247,7 +269,7 @@ CREATE TABLE services (
   published  BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-CREATE TABLE portfolio_items (
+CREATE TABLE IF NOT EXISTS portfolio_items (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nama_event  VARCHAR(180) NOT NULL,
   lokasi      VARCHAR(180) NOT NULL,
@@ -260,7 +282,7 @@ CREATE TABLE portfolio_items (
 );
 
 -- ---------------------------------------------------------------- INQUIRY (form kontak)
-CREATE TABLE inquiries (
+CREATE TABLE IF NOT EXISTS inquiries (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nama            VARCHAR(120) NOT NULL,
   kontak          VARCHAR(160) NOT NULL,
@@ -273,11 +295,11 @@ CREATE TABLE inquiries (
   handled_at      TIMESTAMPTZ,
   received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_inquiries_belum ON inquiries(handled, received_at DESC);
-CREATE INDEX idx_inquiries_ip    ON inquiries(ip_address, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inquiries_belum ON inquiries(handled, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inquiries_ip    ON inquiries(ip_address, received_at DESC);
 
 -- ---------------------------------------------------------------- AUDIT (append-only)
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
   id          BIGSERIAL PRIMARY KEY,
   actor_id    UUID REFERENCES profiles(id),
   actor_role  role_type,
@@ -290,8 +312,8 @@ CREATE TABLE audit_logs (
   ip_address  INET,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_audit_entitas ON audit_logs(entitas, entitas_id, created_at DESC);
-CREATE INDEX idx_audit_actor   ON audit_logs(actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_entitas ON audit_logs(entitas, entitas_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_actor   ON audit_logs(actor_id, created_at DESC);
 
 -- ============================================================================
 -- FUNGSI BANTU
@@ -330,6 +352,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_attendance_status ON attendance;
 CREATE TRIGGER trg_attendance_status
 BEFORE INSERT OR UPDATE OF check_in_at, check_out_at ON attendance
 FOR EACH ROW EXECUTE FUNCTION refresh_attendance_status();
@@ -350,11 +373,17 @@ ALTER TABLE content_blocks     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio_items    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services           ENABLE ROW LEVEL SECURITY;
 
--- Konten publik boleh dibaca anonim
-CREATE POLICY content_public_read ON content_blocks   FOR SELECT USING (published);
-CREATE POLICY services_public_read ON services        FOR SELECT USING (published);
+-- Konten publik boleh dibaca anonim.
+-- Dijaga idempoten: policy dihapus dulu (bila ada) lalu dibuat ulang, karena
+-- CREATE POLICY tidak punya varian IF NOT EXISTS.
+DROP POLICY IF EXISTS content_public_read ON content_blocks;
+CREATE POLICY content_public_read ON content_blocks FOR SELECT USING (published);
+DROP POLICY IF EXISTS services_public_read ON services;
+CREATE POLICY services_public_read ON services FOR SELECT USING (published);
+DROP POLICY IF EXISTS portfolio_public_read ON portfolio_items;
 CREATE POLICY portfolio_public_read ON portfolio_items FOR SELECT USING (published);
-CREATE POLICY catalog_public_read ON catalog_items    FOR SELECT USING (tampil_publik AND aktif);
+DROP POLICY IF EXISTS catalog_public_read ON catalog_items;
+CREATE POLICY catalog_public_read ON catalog_items FOR SELECT USING (tampil_publik AND aktif);
 
 -- Absensi: kru hanya barisnya sendiri.
 -- Policy ini memakai auth.uid() yang hanya ada di Supabase; dibungkus pengecekan
@@ -362,6 +391,7 @@ CREATE POLICY catalog_public_read ON catalog_items    FOR SELECT USING (tampil_p
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
+    EXECUTE 'DROP POLICY IF EXISTS attendance_own_read ON attendance';
     EXECUTE 'CREATE POLICY attendance_own_read ON attendance FOR SELECT USING (user_id = auth.uid())';
   ELSE
     RAISE NOTICE 'Skema auth (Supabase) tidak ada - policy attendance_own_read dilewati.';
@@ -381,7 +411,8 @@ $$;
 -- Sebelumnya endpoint ini ada di OpenAPI tapi TIDAK punya sumber data sama sekali.
 -- Prinsip requirement: harga TIDAK boleh ikut tersaji ke publik, jadi kolom harga
 -- sengaja tidak diseleksi di view ini (bukan hanya disembunyikan di serializer).
-CREATE OR REPLACE VIEW v_public_equipment AS
+DROP VIEW IF EXISTS v_public_equipment;
+CREATE VIEW v_public_equipment AS
 SELECT
   a.kategori::TEXT AS kategori,
   a.nama,
@@ -397,7 +428,8 @@ WHERE a.jumlah_total > 0;
 -- alpha dihitung di sini: deret hari kerja di-left-join ke attendance.
 -- ponytail: hari kerja diasumsikan Senin-Sabtu; ganti ekspresi EXTRACT(DOW) bila
 -- kalender FMN ternyata Senin-Jumat atau memakai shift.
-CREATE OR REPLACE VIEW v_attendance_daily AS
+DROP VIEW IF EXISTS v_attendance_daily;
+CREATE VIEW v_attendance_daily AS
 WITH hari AS (
   SELECT generate_series(
            date_trunc('month', CURRENT_DATE)::DATE,
@@ -418,6 +450,7 @@ kartu AS (
 SELECT
   k.user_id,
   k.nama,
+  k.role,
   w.tanggal,
   a.id                       AS attendance_id,
   a.check_in_at,

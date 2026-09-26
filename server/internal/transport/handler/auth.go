@@ -28,15 +28,15 @@ type userRow struct {
 // docs/arch/ADR-001-serverless-realtime.md:
 //   - Realtime Supabase memvalidasi token yang terbit dari Auth-nya sendiri;
 //   - menerbitkan token sendiri di backend berarti harus memegang secret
-//     Supabase, yang justru menambah rahasia yang beredar tanpa manfaat.
+//     Supabase, yang justru menambah rahasia beredar tanpa manfaat.
 //
-// Backend HANYA memverifikasi token (lihat internal/token/verifier.go) dan
-// melayani data aplikasi. Sempat ada POST /api/auth/login berbasis bcrypt di
-// sini; endpoint itu DIHAPUS karena dua jalur autentikasi berarti dua permukaan
+// Backend HANYA memverifikasi token (internal/token/verifier.go) dan melayani
+// data aplikasi. Sempat ada POST /api/auth/login berbasis bcrypt di sini;
+// endpoint itu DIHAPUS karena dua jalur autentikasi berarti dua permukaan
 // serangan, dan jalur bcrypt tidak lagi terpakai frontend.
 
 // Me mengembalikan profil pengguna yang sedang login.
-// Peran diambil dari DATABASE, bukan dari klaim token, supaya perubahan peran
+// Peran diambil dari DATABASE, bukan klaim token, supaya perubahan peran
 // langsung terlihat tanpa menunggu token kedaluwarsa.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	id := middleware.MustIdentity(r.Context())
@@ -49,8 +49,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		FROM profiles WHERE id = $1
 	`, id.UserID).Scan(&u.ID, &u.Nama, &u.Email, &u.Role, &u.Status, &u.MustChangePassword)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Token sah tapi profil tidak ada: kemungkinan akun dihapus setelah token
-		// diterbitkan. 404, bukan 401, supaya jelas bedanya.
+		// Token sah tapi profil tidak ada: akun dihapus setelah token diterbitkan.
 		httpx.Error(w, r, httpx.NotFound("Akun tidak ditemukan."))
 		return
 	}
