@@ -1,5 +1,14 @@
 # Isi Environment Variables Vercel - FMN
 
+> **STATUS 2026-09-27: SUDAH TERPASANG.** Seluruh env di kedua project Vercel
+> sudah diisi lewat Vercel API (production + preview + development, 12 variabel,
+> tanpa kegagalan). Skema database di Supabase juga **sudah ada** (17 tabel +
+> 2 view, RLS aktif, hook `custom_access_token_hook` ada, grant
+> `supabase_auth_admin -> SELECT` pada `profiles` ada).
+>
+> Dokumen ini tetap disimpan sebagai rujukan kalau env perlu diisi ulang di
+> mesin/project lain. Langkah di bawah masih berlaku apa adanya.
+
 Dua berkas siap salin di folder ini:
 
 | Berkas | Untuk project Vercel | Root Directory |
