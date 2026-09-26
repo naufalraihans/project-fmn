@@ -1,6 +1,7 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index?__path=$1" }
-  ]
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"buildCommand": "cd web && bun install && bun run build",
+	"outputDirectory": "web/build",
+	"installCommand": "cd web && bun install",
+	"rewrites": [{ "source": "/api/(.*)", "destination": "/api/index?__path=$1" }]
 }
