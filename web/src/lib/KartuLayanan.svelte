@@ -1,8 +1,16 @@
 <script lang="ts">
-	let { nama, deskripsi, cakupan = [] }: { nama: string; deskripsi: string; cakupan?: string[] } = $props();
+	let {
+		nama,
+		deskripsi,
+		cakupan = [],
+		foto = null
+	}: { nama: string; deskripsi: string; cakupan?: string[]; foto?: string | null } = $props();
 </script>
 
 <article class="card">
+	{#if foto}
+		<div class="foto"><img src={foto} alt={nama} loading="lazy" /></div>
+	{/if}
 	<div class="body">
 		<h3>{nama}</h3>
 		<p>{deskripsi}</p>
@@ -23,6 +31,11 @@
 		border: 1px solid var(--line-dark);
 		border-radius: var(--r-lg);
 		overflow: hidden;
+	}
+	.card .foto img {
+		width: 100%;
+		height: 170px;
+		object-fit: cover;
 	}
 	.body {
 		padding: 22px;

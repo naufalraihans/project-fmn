@@ -32,3 +32,8 @@ Thumbs.db
 # dan bukan milik repo ini (foto milik FMN). File HTML/OCR/JSON profil besar
 # dan tidak perlu ikut versioning. Logo + poster asli dari klien TETAP ikut.
 /material/ig/
+# Bahan mentah event Soekarno Coffee Fest (2,3 GB, 175 foto + 2 video).
+# TIDAK BOLEH ikut versioning. Yang ikut repo hanya hasil olahan kecil di
+# web/static/galeri/ (sudah dikompresi untuk web). Folder mentah ini hanya
+# dibaca saat mengolah, tidak pernah di-commit.
+/material/3RD SOEKARNO COFFEE FEST 2024/

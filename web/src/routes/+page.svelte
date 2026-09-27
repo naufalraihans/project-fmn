@@ -8,10 +8,10 @@
 	const { compro } = data;
 
 	const LAYANAN_BAWAAN = [
-		{ nama: 'LED Videotron', deskripsi: 'Rental LED hybrid indoor/outdoor P3.9 dengan kualitas terbaik.', cakupan: ['Indoor', 'Outdoor', 'Processor'] },
-		{ nama: 'Sound System', deskripsi: 'Line array, FOH, monitor, hingga kebutuhan audio skala besar.', cakupan: ['Line array', 'FOH', 'Monitor'] },
-		{ nama: 'Lighting', deskripsi: 'Beam, parled, fresnel, follow spot dan lighting console profesional.', cakupan: ['Beam', 'Parled', 'Console'] },
-		{ nama: 'Stage & Rigging', deskripsi: 'Panggung, rigging, barikade dan struktur event yang aman dan presisi.', cakupan: ['Panggung', 'Truss', 'Barikade'] }
+		{ nama: 'LED Videotron', deskripsi: 'Rental LED hybrid indoor/outdoor P3.9 dengan kualitas terbaik.', cakupan: ['Indoor', 'Outdoor', 'Processor'], foto: '/galeri/layanan-led.jpg' },
+		{ nama: 'Sound System', deskripsi: 'Line array, FOH, monitor, hingga kebutuhan audio skala besar.', cakupan: ['Line array', 'FOH', 'Monitor'], foto: '/galeri/layanan-sound.jpg' },
+		{ nama: 'Lighting', deskripsi: 'Beam, parled, fresnel, follow spot dan lighting console profesional.', cakupan: ['Beam', 'Parled', 'Console'], foto: '/galeri/layanan-lighting.jpg' },
+		{ nama: 'Stage & Rigging', deskripsi: 'Panggung, rigging, barikade dan struktur event yang aman dan presisi.', cakupan: ['Panggung', 'Truss', 'Barikade'], foto: null }
 	];
 	const layanan = compro.layanan.length ? compro.layanan : LAYANAN_BAWAAN;
 
@@ -43,7 +43,7 @@
 
 <header class="site">
 	<div class="wrap">
-		<a class="logo" href="#beranda"><b>Focus</b><span>Management Nusantara</span></a>
+		<a class="logo" href="#beranda"><img src="/logo.png" alt="Logo Focus Management Nusantara" /><span class="teks"><b>Focus</b><span>Management Nusantara</span></span></a>
 		<button class="menu-btn" aria-expanded={menuBuka} on:click={() => (menuBuka = !menuBuka)}>Menu</button>
 		<nav class="main" class:open={menuBuka}>
 			<a href="#beranda">Beranda</a>
@@ -84,9 +84,9 @@
 		<span class="rule"></span>
 		<div class="svc">
 			{#each layanan as l}
-				<KartuLayanan nama={l.nama} deskripsi={l.deskripsi} cakupan={l.cakupan ?? []} />
+				<KartuLayanan nama={l.nama} deskripsi={l.deskripsi} cakupan={l.cakupan ?? []} foto={'foto' in l ? (l.foto ?? null) : null} />
 			{/each}
-		</div>
+			</div>
 	</div>
 </section>
 
@@ -104,9 +104,10 @@
 			</div>
 		{:else}
 			<div class="gal">
-				{#each ['Blitar Djadoel', 'Hakordia Kota Blitar', 'DKV ISI Yogyakarta', 'Soekarno Coffee Fest'] as t}
-					<div class="tile"><span class="cap"><b>{t}</b></span></div>
-				{/each}
+				<div class="tile foto" style="background-image:url('/galeri/portofolio-1.jpg')"><span class="cap"><em>Blitar - 2024</em><b>Soekarno Coffee Fest</b></span></div>
+				<div class="tile foto" style="background-image:url('/galeri/portofolio-2.jpg')"><span class="cap"><b>Blitar Djadoel</b></span></div>
+				<div class="tile foto" style="background-image:url('/galeri/portofolio-3.jpg')"><span class="cap"><b>Hakordia Kota Blitar</b></span></div>
+				<div class="tile"><span class="cap"><b>DKV ISI Yogyakarta</b></span></div>
 			</div>
 		{/if}
 	</div>
@@ -136,12 +137,15 @@
 	</div>
 </section>
 
-<section class="off" id="tentang">
-	<div class="wrap">
-		<span class="eyebrow gray">Kenapa Memilih</span>
-		<h2>Focus Management Nusantara?</h2>
-		<span class="rule"></span>
-		<p class="tentang">{teks(compro.tentang, 'isi', teks(compro.tentang, 'deskripsi', 'Event production partner untuk mewujudkan ide besar Anda. Didukung tim profesional, peralatan modern, dan pengalaman di berbagai skala event di Indonesia.'))}</p>
+<section class="off foto-tentang" id="tentang">
+	<div class="wrap tentang-grid">
+		<div>
+			<span class="eyebrow gray">Kenapa Memilih</span>
+			<h2>Focus Management Nusantara?</h2>
+			<span class="rule"></span>
+			<p class="tentang">{teks(compro.tentang, 'isi', teks(compro.tentang, 'deskripsi', 'Event production partner untuk mewujudkan ide besar Anda. Didukung tim profesional, peralatan modern, dan pengalaman di berbagai skala event di Indonesia.'))}</p>
+		</div>
+		<div class="tentang-foto"><img src="/galeri/tentang.jpg" alt="Suasana event yang ditangani Focus Management Nusantara" loading="lazy" /></div>
 	</div>
 </section>
 
@@ -192,6 +196,19 @@
 	}
 	.logo {
 		display: flex;
+		flex-direction: row;
+		align-items: center;
+		gap: 12px;
+		line-height: 1.1;
+	}
+	.logo img {
+		width: 40px;
+		height: 40px;
+		object-fit: cover;
+		border-radius: 8px;
+	}
+	.logo .teks {
+		display: flex;
 		flex-direction: column;
 		line-height: 1.1;
 	}
@@ -222,7 +239,10 @@
 		padding: 8px 14px;
 	}
 	.hero {
-		background: var(--ink-900);
+		background:
+			linear-gradient(180deg, rgba(6, 10, 18, 0.62), rgba(6, 10, 18, 0.55)),
+			url('/galeri/hero.jpg') center 30% / cover no-repeat,
+			var(--ink-900);
 		color: #fff;
 		padding: 90px 0 70px;
 	}
@@ -275,6 +295,21 @@
 		padding: 18px;
 		border: 1px solid var(--line-dark);
 	}
+	.tile.foto {
+		background-size: cover;
+		background-position: center;
+		position: relative;
+	}
+	.tile.foto::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: var(--r-lg);
+		background: linear-gradient(180deg, rgba(6, 10, 18, 0.05) 40%, rgba(6, 10, 18, 0.82));
+	}
+	.tile .cap {
+		position: relative;
+	}
 	.tile .cap em {
 		display: block;
 		font: 500 12px/1.4 var(--font-body);
@@ -305,6 +340,18 @@
 	}
 	section.off {
 		background: var(--off-white);
+	}
+	.tentang-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 40px;
+		align-items: center;
+	}
+	.tentang-foto img {
+		width: 100%;
+		border-radius: var(--r-lg);
+		object-fit: cover;
+		max-height: 380px;
 	}
 	.tentang {
 		margin-top: 16px;
@@ -349,6 +396,9 @@
 		}
 		.inv {
 			grid-template-columns: 1fr 1fr;
+		}
+		.tentang-grid {
+			grid-template-columns: 1fr;
 		}
 		.fgrid {
 			grid-template-columns: 1fr;
